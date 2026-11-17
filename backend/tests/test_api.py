@@ -146,3 +146,20 @@ class BackendTests(unittest.TestCase):
                 files={"file":("lesson.pdf",b"%PDF-1.7\\nTEST","application/pdf")})
         self.assertEqual(r.status_code,503,r.text)
         self.assertIn("Durable document storage",r.json()["detail"])
+
+    def test_10_vercel_requires_durable_course_storage(self):
+        cid=self.course_id
+        with patch.dict(os.environ,{"NIT_SERVERLESS_RUNTIME":"1"}):
+            with patch.object(nit,"ingest",side_effect=AssertionError("must not ingest")) as mock:
+                r=self.req("POST",f"/v1/courses/{cid}/materials",self.tf,
+                    files={"file":("lesson.pdf",b"%PDF-1.7\\nTest", "application/pdf")})
+                self.assertEqual(r.status_code,503,r.text)
+                self.assertIn("durable",r.json()["detail"])
+                mock.assert_not_called()
+
+    def test_11_vercel_still_checks_course_acl_before_upload_guard(self):
+        cid=self.course_id
+        with patch.dict(os.environ,{"NIT_SERVERLESS_RUNTIME":"1"}):
+            r=self.req("POST",f"/v1/courses/{cid}/materials",self.to,
+                files={"file":("lesson.pdf",b"%PDF-1.7\\nTest","application/pdf")})
+            self.assertEqual(r.status_code,403,r.text)
