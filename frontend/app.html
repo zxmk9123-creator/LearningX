@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>질문 코칭 실습 · LearningX</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/pilot.css">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header><div class="wrap"><a class="logo" href="index.html"><span class="mark" aria-hidden="true">?</span> LearningX <small>질문 코치</small></a><nav aria-label="메뉴"><a href="index.html">소개</a><a href="flow.html">수업 흐름</a><a href="levels.html">질문 수준</a><a href="app.html" aria-current="page">실습실</a></nav><span class="pilot-top">Pilot prototype</span></div></header>
+<main id="main" class="pilot-main">
+  <div class="wrap">
+    <div class="pilot-heading"><div><span class="eyebrow">LEARNINGX / PILOT WORKSPACE</span><h1>질문을 완성하는 연습실</h1><p>답을 대신 받기보다, 근거를 검토하고 더 좋은 질문으로 고쳐 보세요.</p></div><a class="btn sm ghost" href="principles.html">운영 원칙 보기</a></div>
+    <div class="mode-toggle" role="group" aria-label="접속 방식"><button id="demo-mode" type="button" class="active" aria-pressed="true">데모 체험</button><button id="api-mode" type="button" aria-pressed="false">백엔드 연결</button></div>
+    <p class="pilot-notice" id="mode-notice" role="status">데모 모드: 모든 질문·답변·승인·이력은 예시이며, 실제 LLM 호출이나 교수자 서명은 발생하지 않습니다.</p>
+    <section class="card pilot-connection" id="connection" hidden aria-labelledby="conn-title">
+      <div class="sec-head pilot-sec-head"><div><span class="eyebrow">BACKEND CONNECTION</span><h2 id="conn-title">서버에 연결하기</h2></div></div>
+      <p class="small-muted">운영자가 발급한 임시 토큰이 필요합니다. 토큰은 브라우저 메모리에만 보관되며 새로고침하면 사라집니다. 서버 주소는 HTTPS 또는 로컬 개발 주소만 허용합니다.</p>
+      <form id="connect-form" class="pilot-fields">
+        <label>백엔드 URL<input id="api-url" type="url" placeholder="https://your-api.example" autocomplete="url" required></label>
+        <label>임시 Bearer 토큰<input id="api-token" type="password" placeholder="서버에서 발급받은 토큰" autocomplete="off" required></label>
+        <button class="btn" type="submit">연결 및 수업 조회</button>
+        <button class="btn ghost" id="disconnect" type="button" disabled>연결 해제</button>
+      </form>
+      <p class="pilot-connection-status" id="conn-status" role="status">연결되지 않았습니다.</p>
+    </section>
+    <section aria-label="사용자 역할" class="pilot-role">
+      <div class="seg" role="group" aria-label="역할 미리보기"><button class="chip" id="role-student" type="button" aria-pressed="true">학생 화면</button><button class="chip" id="role-faculty" type="button" aria-pressed="false">교수자 화면</button></div>
+      <span class="small-muted" id="role-hint">체험용 역할 선택 · 실제 연결 시 수업 멤버십으로 권한을 검증합니다</span>
+    </section>
+    <div class="pilot-grid">
+      <section class="card pilot-work" id="student-work" aria-labelledby="student-title">
+        <span class="eyebrow">STUDENT</span><h2 id="student-title">내 질문 다듬기</h2><p class="small-muted">질문을 적으면 역질문을 받고, 스스로 수정합니다.</p>
+        <div class="pilot-fields">
+          <label>수업 선택<select id="student-course" aria-label="학생 수업"><option value="demo-course">커뮤니케이션의 유형과 성격 특성 (데모)</option></select></label>
+          <label>교안 선택<select id="student-material" aria-label="학습 교안"><option value="demo-material">2강 커뮤니케이션 유형 (예시 근거)</option></select></label>
+        </div>
+        <div class="pilot-step"><span class="pilot-num">01</span><div><h3>처음 질문</h3><p class="small-muted">배운 내용을 근거로 10자 이상 작성해 주세요.</p></div></div>
+        <form id="ask-form" class="pilot-form">
+          <label class="sr-only" for="question">학생 질문</label>
+          <textarea id="question" maxlength="2000" minlength="10" rows="4" placeholder="예: 갈등을 피하는 사람은 항상 커뮤니케이션 능력이 낮을까요?" required></textarea>
+          <button class="btn" id="ask-submit" type="submit">역질문 받기</button>
+        </form>
+        <div class="pilot-feedback" id="feedback" hidden aria-live="polite">
+          <div class="pilot-step"><span class="pilot-num">02</span><div><h3>AI 질문 코치</h3><p class="small-muted">답이 아닌, 사고를 확장하는 후속 질문입니다.</p></div></div>
+          <blockquote id="followup"></blockquote>
+          <div class="pilot-evidence" id="evidence"></div>
+          <div class="pilot-step"><span class="pilot-num">03</span><div><h3>내 질문 다시 쓰기</h3><p class="small-muted">제안에 동의할 필요는 없습니다. 직접 생각한 질문을 남기세요.</p></div></div>
+          <form id="revise-form" class="pilot-form"><label class="sr-only" for="revision">수정 질문</label><textarea id="revision" maxlength="2000" minlength="10" rows="3" required placeholder="예: 갈등 회피 성향과 의사소통 능력의 차이를 어떤 행동 지표로 구분할 수 있나요?"></textarea><button type="submit" class="btn">수정 질문 기록</button></form>
+        </div>
+        <div class="pilot-history"><h3>질문 이력 <small id="history-count">0건</small></h3><div id="history-list" class="history-list"><p class="small-muted">아직 작성한 질문이 없습니다.</p></div></div>
+      </section>
+      <section class="card pilot-work" id="faculty-work" hidden aria-labelledby="faculty-title">
+        <span class="eyebrow">FACULTY</span><h2 id="faculty-title">수업 · 교안 관리</h2><p class="small-muted">교안이 처리됐더라도 교수자가 검토·서명하기 전까지 코칭 근거가 아닙니다.</p>
+        <form id="course-form" class="pilot-form"><label>수업 이름<input id="course-title" minlength="2" maxlength="180" placeholder="예: 2학기 매스커뮤니케이션" required></label><button type="submit" class="btn sm">수업 생성</button></form>
+        <label>관리할 수업<select id="faculty-course"><option value="demo-course">커뮤니케이션의 유형과 성격 특성 (데모)</option></select></label>
+        <div class="pilot-divider"></div>
+        <div class="pilot-step"><span class="pilot-num">01</span><div><h3>교안 업로드</h3><p class="small-muted">실제 업로드는 서버 연결 모드에서만 수행됩니다 (PDF/PPTX, 최대 25MB).</p></div></div>
+        <form id="upload-form" class="pilot-form"><input type="file" id="material-file" accept=".pdf,.pptx" required><button class="btn sm" type="submit">교안 처리 요청</button></form>
+        <label>검토할 교안<select id="faculty-material"><option value="demo-material">2강 커뮤니케이션 유형 (데모)</option></select></label>
+        <button class="btn sm ghost" type="button" id="load-candidates">승인 후보 조회</button>
+        <div class="pilot-candidates" id="candidates" hidden><h3>교수자 검토 후보</h3><p class="small-muted">원문과 대조한 뒤 승인할 블록만 체크하세요. 후보 목록은 자동 승인 대상이 아닙니다.</p><div id="candidate-list" class="candidate-list"></div><button class="btn sm" id="approve-selected" type="button">선택한 블록 서명 승인</button></div>
+        <div class="pilot-divider"></div>
+        <div class="pilot-step"><span class="pilot-num">02</span><div><h3>수업 코칭 정책</h3><p class="small-muted">정책 허용과 근거 블록의 암호학적 서명은 서로 별개입니다.</p></div></div>
+        <form id="policy-form" class="pilot-fields"><label>코칭 범위<select id="policy-value"><option value="RESTRICTED_HINT_ONLY">힌트 중심 (권장)</option><option value="PROHIBITED">사용 금지</option><option value="PERMITTED">허용</option></select></label><label class="pilot-inline"><input type="checkbox" id="policy-approved"> 수업 단위 AI 허용</label><button type="submit" class="btn sm ghost">정책 저장</button></form>
+        <div class="pilot-divider"></div>
+        <div class="pilot-step"><span class="pilot-num">03</span><div><h3>학생 참여 등록</h3><p class="small-muted">서버에 이미 생성된 학생의 ID만 등록합니다. 6자리 수업코드는 아직 지원하지 않습니다.</p></div></div>
+        <form id="enroll-form" class="pilot-form"><label>학생 사용자 ID<input id="student-id" required placeholder="관리자가 전달한 학생 ID"></label><button type="submit" class="btn sm ghost">학생 등록</button></form>
+      </section>
+      <aside class="pilot-side">
+        <div class="card side-card"><span class="eyebrow">HOW IT WORKS</span><h3>질문 중심 수업의 3원칙</h3><ol><li>정답은 제시하지 않습니다.</li><li>교수자 승인 근거만 활용합니다.</li><li>수정은 학생 본인이 합니다.</li></ol></div>
+        <div class="card side-card soft-side"><h3>현재 구현 범위</h3><p>교안 업로드 → 검토·서명 → 질문 코칭 → 수정 이력</p><p class="small-muted">유사 질문 묶기·익명 질문 공개·6자리 코드·실제 SSO는 아직 구현되지 않았습니다.</p></div>
+      </aside>
+    </div>
+    <p role="status" id="pilot-status" class="pilot-status" aria-live="polite"></p>
+  </div>
+</main>
+<footer><div class="wrap"><span><b>LearningX</b> · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span><span>실습용 프로토타입 · 데모/실서버 모드를 구분해 사용하세요</span></div></footer>
+<script src="assets/pilot.js" defer></script>
+</body>
+</html>
