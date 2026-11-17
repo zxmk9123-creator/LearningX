@@ -25,5 +25,6 @@ assert.match(js,/evidence_refs/);
 assert.match(js,/\/v1\/courses\/mine/);
 assert.match(js,/\/revisions/);
 const cfg=JSON.parse(fs.readFileSync(path.join(root,'vercel.json'),'utf8'));
+assert.strictEqual(cfg.framework,null,'Static frontend must explicitly select Vercel Other preset');
 assert.ok(cfg.headers[0].headers.some(h=>h.key==='Content-Security-Policy'));
 console.log(`OK: ${pages.length} linked HTML pages, app contract hooks, token hygiene, Vercel headers`);
