@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수업 흐름 · 질문 코치 (가칭)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="질문 코치 홈"><span class="mark" aria-hidden="true">?</span>질문 코치<small>가칭</small></a>
+    <nav aria-label="주요 메뉴">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html" aria-current="page">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+    </nav>
+    <a class="btn sm ghost" href="app.html">실습실 열기</a>
+  </div>
+  <nav class="mnav" aria-label="주요 메뉴 (모바일)">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html" aria-current="page">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+  </nav>
+</header>
+
+<main id="main">
+<section class="block" id="flow">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><span class="eyebrow">수업 흐름</span><h2>질문 쓰기부터 교수자 설명까지,<br>한 수업 안에서 끝납니다</h2></div>
+      <a class="btn sm ghost" href="levels.html">코치 예시 보기</a>
+    </div>
+    <ol class="flow">
+      <li class="card"><span class="num">1</span><h3>질문 쓰기</h3><p>배운 내용이나 교수자가 제시한 사례를 보고 모두가 익명으로 질문을 씁니다.</p><span class="who">학생</span></li>
+      <li class="card"><span class="num">2</span><h3>분류</h3><p>AI가 질문의 사고 수준을 표시하는 기능은 차후 제공 예정입니다. 현재는 역질문 생성부터 체험할 수 있습니다.</p><span class="who">AI</span></li>
+      <li class="card"><span class="num">3</span><h3>끌어올리기</h3><p>AI가 질문 줄기를 제안하면, 학생이 빈칸을 채워 더 깊은 질문으로 고쳐 씁니다.</p><span class="who">학생 · AI</span></li>
+      <li class="card"><span class="num">4</span><h3>묶기</h3><p>(추후 구현) 비슷한 질문을 묶어 반 전체의 핵심 질문을 만듭니다.</p><span class="who">AI</span></li>
+      <li class="card"><span class="num">5</span><h3>설명</h3><p>(추후 구현) 교수자가 고른 질문으로 수업을 이어 갑니다.</p><span class="who">교수자</span></li>
+    </ol>
+      <nav class="pager" aria-label="이전·다음 페이지">
+      <a href="cards.html"><small>← 이전</small><b>AI 경각심 카드</b></a>
+      <a class="next" href="levels.html"><small>다음 →</small><b>질문 수준</b></a>
+    </nav>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
+    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>
