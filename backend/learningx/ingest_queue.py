@@ -89,6 +89,10 @@ async def _dispatch_job(job_id:str,attempt:int):
     Scheduled recovery polls queued jobs if the trigger is lost.
     """
     mode=os.getenv("NIT_WORKER_BACKEND","")
+    if mode=="northflank_poll":
+        # A separate always-on worker polls queued DB jobs. The committed row
+        # itself is the durable dispatch event; no GitHub/Vercel credentials.
+        return
     if mode in ("vercel_queue","vercel_queues") or (not mode and os.getenv("NIT_QUEUE_ENABLED")=="1"):
         try:
             from vercel.queue import send

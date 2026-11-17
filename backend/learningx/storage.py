@@ -97,7 +97,8 @@ class IngestJob(Base):
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
     # Never silently write SQLite into an ephemeral serverless filesystem.
-    if os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("RENDER_SERVICE_ID"):
+    if (os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("RENDER_SERVICE_ID")
+            or os.getenv("NIT_HOSTED_RUNTIME") == "1"):
         raise RuntimeError("DATABASE_URL must be configured for hosted LearningX API")
     DB_URL = "sqlite:///./learningx_dev.sqlite3"
 if DB_URL.startswith("postgres://"):

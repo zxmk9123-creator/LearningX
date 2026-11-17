@@ -31,7 +31,8 @@ def available():
 
 
 def serverless():
-    return os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("VERCEL") == "1"
+    return (os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("VERCEL") == "1"
+            or os.getenv("NIT_HOSTED_RUNTIME") == "1")
 
 
 def require_store():
