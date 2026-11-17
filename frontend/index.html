@@ -6,6 +6,7 @@
 <title>질문 코치 (가칭)</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/beta-home.css">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -32,50 +33,75 @@
 </header>
 
 <main id="main">
-<section class="hero" id="top">
-  <div class="wrap grid">
-    <div>
-      <span class="eyebrow">AI 시대의 질문 수업 도구</span>
-      <h1>AI가 답하는 시대,<br><em>학생의 질문</em>으로<br>수업을 움직입니다</h1>
-      <p class="lead">학생은 질문을 쓰고, AI는 정답 대신 생각을 확장하는 역질문을 제안합니다. 교수자는 모인 질문으로 그날의 수업을 엽니다.</p>
-      <ul class="facts" aria-label="핵심 특징">
-        <li>질문은 학생이 직접 작성</li>
-        <li>질문 수정은 본인이 직접</li>
-        <li>교수자가 승인한 교안만 근거로 사용</li>
-      </ul>
+<section class="beta-hero" id="top" aria-labelledby="beta-main-heading">
+  <div class="wrap beta-layout">
+    <div class="beta-intro">
+      <span class="eyebrow">LEARNINGX · 질문 중심 수업</span>
+      <h1 id="beta-main-heading">교안으로 시작하고,<br><em>학생의 질문</em>으로 수업합니다</h1>
+      <p>교수자는 승인한 근거만 학생에게 제공하고, 학생은 스스로 질문을 쓰고 고쳐 갑니다.</p>
+      <p class="beta-trust-note">실제 베타는 운영진 공유 서버에서만 작동합니다. 가상 교안 데모와 분리되어 있습니다.</p>
     </div>
 
-    <div class="entry">
-      <div class="tabs" role="tablist" aria-label="사용자 유형">
-        <button role="tab" id="tab-student" aria-selected="true" aria-controls="panel-student" tabindex="0">학생</button>
-        <button role="tab" id="tab-prof" aria-selected="false" aria-controls="panel-prof" tabindex="-1">교수자</button>
+    <section class="beta-panel beta-faculty" aria-labelledby="beta-faculty-title">
+      <div class="beta-panel-head"><span class="beta-mode">실제 베타</span><span class="beta-side-label">교수자</span></div>
+      <h2 id="beta-faculty-title">교안 올리고 수업 열기</h2>
+      <p class="beta-sub">운영진 초대 코드로 인증한 다음, 업로드 동의와 교안 등록을 진행합니다.</p>
+      <div class="beta-server-status" role="status" aria-live="polite">
+        <span aria-hidden="true" class="beta-server-dot"></span>
+        <span id="beta-server-message">서버 연결 정보 확인 중</span>
       </div>
+      <form id="beta-invite-form" novalidate>
+        <label class="field-label" for="beta-invite-code">베타 초대 코드</label>
+        <div class="beta-form-row">
+          <input id="beta-invite-code" name="invite_code" type="password" autocomplete="off" spellcheck="false" placeholder="운영진 발급 코드" aria-describedby="beta-invite-error beta-server-help" disabled>
+          <button class="btn" id="beta-invite-submit" type="submit" disabled>코드 검증</button>
+        </div>
+        <p class="beta-error" id="beta-invite-error" role="alert" hidden></p>
+      </form>
+      <div id="beta-consent" class="beta-consent" aria-labelledby="beta-consent-title">
+        <h3 id="beta-consent-title">업로드 전 확인</h3>
+        <label><input id="beta-rights" type="checkbox" disabled> 업로드 권한이 있는 강의 자료입니다 (저작권 확인)</label>
+        <p>베타 보관 기간: <strong id="beta-retention">운영 정책 미정</strong></p>
+        <p>자료 삭제 방법: <strong id="beta-deletion">운영 정책 미정</strong></p>
+        <label><input id="beta-retention-consent" type="checkbox" disabled> 자료 보관·삭제 정책을 확인했습니다</label>
+      </div>
+      <div class="beta-upload" aria-labelledby="beta-upload-title">
+        <h3 id="beta-upload-title">PDF/PPTX 교안 업로드</h3>
+        <p class="beta-sub">서버가 실제로 허용하는 형식·용량·보관 정책을 확인하기 전에는 업로드할 수 없습니다.</p>
+        <label class="beta-drop" for="beta-file"><span aria-hidden="true">＋</span><strong>파일 첨부</strong><small id="beta-file-limit">허용 용량 확인 전</small></label>
+        <input id="beta-file" type="file" accept=".pdf,.pptx" aria-describedby="beta-file-limit" disabled>
+        <div class="beta-progress" id="beta-upload-progress" hidden>
+          <label for="beta-progressbar">업로드 진행률 <span id="beta-progress-percent">0%</span></label>
+          <progress id="beta-progressbar" max="100" value="0"></progress>
+          <div class="beta-form-row">
+            <button class="btn sm ghost" id="beta-upload-cancel" type="button" disabled>취소</button>
+            <button class="btn sm ghost" id="beta-upload-retry" type="button" disabled>재시도</button>
+          </div>
+        </div>
+        <p id="beta-upload-error" class="beta-error" role="alert" hidden></p>
+      </div>
+      <p class="beta-blocked-note" id="beta-server-help" aria-live="polite">공유 서버 API 계약과 보관 정책 확인 전이므로 실제 자료는 전송되지 않습니다.</p>
+    </section>
 
-      <div role="tabpanel" id="panel-student" aria-labelledby="tab-student">
-        <form id="join" novalidate>
-          <label class="field-label" for="code">6자리 수업 코드 UI 미리보기 (데모 전용)</label>
-          <input id="code" class="code" placeholder="AB12CD" autocomplete="off" inputmode="latin" aria-describedby="code-err code-hint">
-          <p class="err" id="code-err" aria-live="polite"></p>
-          <button class="btn block" type="submit">수업 입장</button>
-          <p class="hint" id="code-hint">아직 서버에서 6자리 수업 코드를 발급하지 않습니다. 코칭은 실습실에서 체험하세요.</p>
-        </form>
+    <section class="beta-panel beta-student" aria-labelledby="beta-student-title">
+      <div class="beta-panel-head"><span class="beta-mode">실제 베타</span><span class="beta-side-label">학생</span></div>
+      <h2 id="beta-student-title">수업 코드로 입장</h2>
+      <p class="beta-sub">교수자가 제공한 수업 코드로 입장해 먼저 자신의 질문을 작성하세요.</p>
+      <form id="beta-join-form" novalidate>
+        <label class="field-label" for="beta-class-code">6자리 수업 코드</label>
+        <input id="beta-class-code" class="code" type="text" spellcheck="false" autocapitalize="characters" autocomplete="off" inputmode="latin" maxlength="12" placeholder="ABC234" aria-describedby="beta-code-error beta-student-note">
+        <p class="beta-error" id="beta-code-error" role="alert" hidden></p>
+        <button id="beta-join-submit" class="btn block" type="submit" disabled>실제 수업 입장</button>
+      </form>
+      <p class="beta-student-note" id="beta-student-note">현재 공유 베타 서버 연결 준비 중입니다. 코드를 임의 수업에 연결하거나 데모로 자동 입장시키지 않습니다.</p>
+      <div class="beta-demo-entry">
+        <span class="beta-mode beta-mode-demo">별도 체험 · 데모</span>
+        <h3>지금 수업 흐름을 체험하려면</h3>
+        <p>가상 교안과 규칙 기반 코치만 사용하며 실제 자료를 서버에 보내지 않습니다.</p>
+        <a class="btn ghost block" href="app.html?demo=student">데모 모드 체험</a>
+        <a class="beta-teacher-demo" href="app.html?demo=faculty">교수자 데모 열기</a>
       </div>
-
-      <div role="tabpanel" id="panel-prof" aria-labelledby="tab-prof" hidden>
-        <label class="drop" id="drop">
-          <input type="file" id="file" accept=".pdf,.pptx" aria-describedby="file-hint">
-          <b id="file-name">강의 교안 올리기</b>
-          <span id="file-hint">PDF·PPTX 선택 미리보기 · 실제 업로드는 실습실의 서버 연결에서 진행</span>
-        </label>
-        <ol class="steps" id="steps" aria-label="교안 처리 단계" hidden>
-          <li class="done"><span class="dot" aria-hidden="true">✓</span><span>텍스트·구조 추출<small>슬라이드별 내용과 역할 분류</small></span></li>
-          <li class="wait"><span class="dot" aria-hidden="true">!</span><span>교수자 검토 대기<small>그림·도표와 AI 분석 결과는 확인 전까지 사용하지 않습니다</small></span></li>
-          <li><span class="dot" aria-hidden="true">3</span><span>승인 후 학생 코칭에 사용<small>승인한 쪽만 근거로 인용됩니다</small></span></li>
-        </ol>
-        <button class="btn block" type="button" id="start" disabled>실습실에서 교안 처리하기</button>
-        <button class="btn ghost block" type="button" data-toast="지난 수업 요약은 준비 중입니다">지난 수업 질문 보기</button>
-      </div>
-    </div>
+    </section>
   </div>
 </section>
 
@@ -98,11 +124,12 @@
 <footer>
   <div class="wrap">
     <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
-    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+    <span>실제 베타는 운영진 서버 검증 후 제공 · 별도 데모 체험 가능</span>
   </div>
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="assets/app.js"></script>
+<script type="module" src="assets/beta-home.js"></script>
 </body>
 </html>
