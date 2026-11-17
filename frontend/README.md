@@ -91,3 +91,17 @@ PR의 GitHub Actions는 Playwright Chromium을 설치해 동일 브라우저 컨
 - `node frontend/tests/demo_rehearsal.mjs`: 실제 데모 분류기와 승인된 p.1의 출처만 나오는지 테스트합니다.
 - [실서버 학생 응답 계약](docs/demo-session-api-contract.md): 운영 시 **학생에게 승인된 블록만 서버에서 직렬화**해야 하며, 제외 블록이 DOM에만 없다는 검사로는 보안 요구를 충족하지 못합니다. 학생 HTTP 응답 본문과 잘못된 블록 ID 요청까지 별도 통합 테스트를 요구합니다.
 - PR #7의 Vercel Preview는 2026-11-17 점검 당시 Hobby 일일 배포 한도 초과로 생성되지 않았습니다. 사용 가능한 Preview URL과 경로 200 응답을 확인한 후 발표에 사용하고, 그렇지 않으면 사전 점검한 로컬 정적 서버를 사용합니다.
+
+
+## 홈 화면 실제 베타 연결 준비 (별도 Draft PR)
+
+- `index.html` 첫 화면에 교수자 초대 코드·업로드 동의·파일 첨부 영역과 학생 수업 코드 입력을 배치했습니다. **정식 공유 서버 계약이 확보되지 않은 동안 초대 코드·파일 전송·학생 입장은 비활성**입니다. 구현 전에는 절대로 가상 성공 화면을 보여 주지 않습니다.
+- `assets/beta-home.css`는 기존 `style.css`의 토큰과 단일 강조색 `#1B64DA`를 사용합니다. 모바일에서는 학생 수업 코드가 먼저 배치됩니다.
+- `assets/beta-config.js`의 공개 설정값은 운영진 검증 전까지 **빈 문자열 또는 false/null**입니다. API 주소는 하드코딩하지 않았으며, 초대 코드 실제 값/JWT는 저장소에 넣지 않습니다.
+- `assets/beta-home.js`는 코드 정규화/오류 표시와 **연결 차단**만 합니다. 공유 서버 API 호출은 수행하지 않습니다.
+- 실습실 일반 모드에서 백엔드 URL·JWT 연결 버튼을 숨기고 `app.html?dev=1`에서만 보이게 했습니다. PR #7 데모는 계속 `app.html?demo=faculty` / `?demo=student`에서 별도 실행됩니다.
+- `node frontend/tests/beta_contract_gate.mjs`, `python frontend/tests/beta_gate_e2e.py`: 미연결 안전 가드 및 레이아웃 검사. 기존 9개 데모 Playwright 테스트와 함께 CI에서 수행합니다.
+
+공유 서버 **주소·API 문서·GitHub Actions Secret 이름·보관 정책·삭제 방법·코칭 시간 제한**을 확보한 뒤에만 실제 API 어댑터와 대응 E2E/수동 베타 검증을 구현합니다. 자세한 지원 여부 표와 운영진 요청 사항은 [공유 베타 연결 게이트](docs/shared-beta-readiness.md)를 참고하세요.
+
+이 PR은 사용자 경험 구조와 안전한 연결 차단을 준비한 단계이며 **실제 베타 서버 연결·실제 강의 자료 분석 기능이 완료된 것이 아닙니다.**
