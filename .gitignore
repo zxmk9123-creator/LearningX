@@ -16,3 +16,5 @@ private_lessons/
 *.log
 node_modules/
 .DS_Store
+
+backend/.engines/
