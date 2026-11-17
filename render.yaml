@@ -1,0 +1,34 @@
+# Render Blueprint: deploy ONLY LearningX's FastAPI API.
+# The frontend stays on Vercel. PostgreSQL stays on Neon.
+services:
+  - type: web
+    name: learningx-api
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn learningx.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: DATABASE_URL
+        sync: false
+      - key: NIT_JWT_SECRET
+        generateValue: true
+      - key: NIT_REVIEW_SIGNING_KEY
+        generateValue: true
+      - key: NIT_CORS_ORIGINS
+        value: https://learning-x-one.vercel.app
+      - key: NIT_LLM_MODEL
+        value: auto
+      - key: NIT_LLM_BASE_URL
+        sync: false
+      - key: NIT_LLM_API_KEY
+        sync: false
+      # Render Free has no persistent disk. Keep real course material ingestion
+      # disabled until a supported private durable storage adapter is installed.
+      - key: NIT_STORAGE_DIR
+        value: /tmp/learningx-lessons
