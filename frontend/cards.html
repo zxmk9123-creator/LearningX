@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 경각심 카드 · 질문 코치 (가칭)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="질문 코치 홈"><span class="mark" aria-hidden="true">?</span>질문 코치<small>가칭</small></a>
+    <nav aria-label="주요 메뉴">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html" aria-current="page">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+    </nav>
+    <a class="btn sm ghost" href="app.html">실습실 열기</a>
+  </div>
+  <nav class="mnav" aria-label="주요 메뉴 (모바일)">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html" aria-current="page">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+  </nav>
+</header>
+
+<main id="main">
+<section class="block" id="cards">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><span class="eyebrow">AI 경각심 카드</span><h2>AI를 믿기 전에,<br>먼저 물어야 하는 이유</h2></div>
+      <p>공식 표명, 동료심사 연구, 보도 사례로 근거의 신뢰도를 나눴습니다. 수치는 각 출처의 원문 기준입니다.</p>
+    </div>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="근거 등급 필터">
+        <button class="chip" type="button" data-f="all" aria-pressed="true">전체</button>
+        <button class="chip" type="button" data-f="t1" aria-pressed="false">공식 표명</button>
+        <button class="chip" type="button" data-f="t2" aria-pressed="false">동료심사 연구</button>
+        <button class="chip" type="button" data-f="t3" aria-pressed="false">보도 사례</button>
+      </div>
+      <div class="seg" role="group" aria-label="정렬">
+        <button class="chip" type="button" data-s="story" aria-pressed="true">이야기 순</button>
+        <button class="chip" type="button" data-s="trust" aria-pressed="false">신뢰도 순</button>
+      </div>
+    </div>
+    <p class="sr-only" id="deck-status" aria-live="polite"></p>
+    <div class="deck" id="deck"></div>
+
+    <div class="card check">
+      <h3>AI 답을 쓰기 전 체크리스트<span>여섯 개를 모두 확인하면 내 이름으로 낼 준비가 된 것입니다.</span></h3>
+      <ul id="checklist">
+        <li><label><input type="checkbox">진짜 목적은?</label></li>
+        <li><label><input type="checkbox">근본 원인은?</label></li>
+        <li><label><input type="checkbox">근거를 직접 확인했나?</label></li>
+        <li><label><input type="checkbox">반례는 없나?</label></li>
+        <li><label><input type="checkbox">다른 관점에서는?</label></li>
+        <li><label><input type="checkbox">내가 책임질 수 있나?</label></li>
+      </ul>
+      <div class="meter"><i aria-hidden="true"><b id="meter-bar"></b></i><span id="meter-text" aria-live="polite">0 / 6 확인</span></div>
+    </div>
+      <nav class="pager" aria-label="이전·다음 페이지">
+      <a href="why.html"><small>← 이전</small><b>왜 질문인가</b></a>
+      <a class="next" href="flow.html"><small>다음 →</small><b>수업 흐름</b></a>
+    </nav>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
+    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>
