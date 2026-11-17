@@ -109,3 +109,27 @@ class BackendTests(unittest.TestCase):
         r=self.req("POST",f"/v1/courses/{self.course_id}/materials",self.tf,
             files={"file":("bad.exe",b"malicious","application/octet-stream")})
         self.assertEqual(r.status_code,415)
+
+    def test_06_course_listing_does_not_leak_membership(self):
+        cid=self.course_id
+        r=self.req("GET","/v1/courses/mine",self.ts)
+        self.assertEqual(r.status_code,200)
+        self.assertIn(cid,[item["id"] for item in r.json()["items"]])
+        r=self.req("GET","/v1/courses/mine",self.to)
+        self.assertNotIn(cid,[item["id"] for item in r.json()["items"]])
+        self.assertEqual(self.req("GET",f"/v1/courses/{cid}/materials",self.to).status_code,403)
+
+    def test_07_forged_token_and_evidence_boundary(self):
+        from learningx.security import secret
+        from learningx.storage import Material
+        import jwt
+        from datetime import datetime,timedelta,timezone
+        forged=jwt.encode({"sub":self.student_id,"aud":"learningx","iss":"learningx-server",
+            "iat":datetime.now(timezone.utc),"exp":datetime.now(timezone.utc)+timedelta(minutes=1)},
+            "attacker-secret-at-least-32-characters-long",algorithm="HS256")
+        self.assertEqual(self.req("GET","/v1/courses/mine",forged).status_code,401)
+        with patch.object(nit,"coach_question",side_effect=Exception("must not call")) as mock:
+            r=self.req("POST",f"/v1/courses/{self.course_id}/questions",self.to,
+                json={"material_id":self.material_id,"question":"다른 학생 질문을 조회하겠습니다."})
+            self.assertEqual(r.status_code,403)
+            mock.assert_not_called()
