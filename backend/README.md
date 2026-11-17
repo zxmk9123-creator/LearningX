@@ -25,6 +25,17 @@ NIT_ENGINE_ROOT/
 
 파일을 교체하거나 간이 파서로 우회하지 마세요. 엔진 파일이 없으면 업로드·승인·코칭 API는 **503 fail-closed**입니다. 기존 교안과 사용자 업로드 파일은 공개 GitHub 저장소에 올리지 않습니다.
 
+## Frozen engine 설치
+
+기존 검증 패키지 `NIT_Pilot_Readiness_Minimal_Patch.zip`을 확보한 뒤 저장소 루트에서 아래 명령을 실행합니다. 설치 스크립트는 패키지 SHA-256을 고정 검증하며, 기존 엔진 파일을 덮어쓰지 않습니다.
+
+```bash
+python backend/scripts/install_frozen_engine.py /path/to/NIT_Pilot_Readiness_Minimal_Patch.zip --dest backend/.engines/nit-pilot-pinned
+export NIT_ENGINE_ROOT="$(pwd)/backend/.engines/nit-pilot-pinned"
+```
+
+이 엔진 디렉터리는 Git 추적 대상이 아닙니다. 설치한 소스의 사용 허가·보안 확인과 운영 환경 배포 절차는 별도 검토가 필요합니다.
+
 ## 로컬 실행
 
 ```bash
@@ -34,7 +45,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 export NIT_JWT_SECRET='CHANGE_TO_STRONG_RANDOM_SECRET_AT_LEAST_32_BYTES'
 export NIT_REVIEW_SIGNING_KEY='CHANGE_TO_ANOTHER_STRONG_RANDOM_SECRET_AT_LEAST_32_BYTES'
-export NIT_ENGINE_ROOT='/absolute/path/to/nit-runtime-pilot-readiness'
+export NIT_ENGINE_ROOT='/absolute/path/to/reviewed-and-installed-engine'
 export NIT_STORAGE_DIR='/private/learningx-lessons'
 export DATABASE_URL='sqlite:///./learningx_dev.sqlite3'
 export NIT_LLM_BASE_URL='https://YOUR_PROVIDER/v1'
@@ -50,11 +61,15 @@ uvicorn learningx.api:app --host 127.0.0.1 --port 8000
 
 PostgreSQL 환경에는 `postgresql+psycopg://...`을 사용하세요. 디스크에 업로드 파일을 보관하므로 Vercel의 일시적 파일시스템에 그대로 배포하면 안 됩니다. 영구 스토리지와 백그라운드 문서 파싱을 갖춘 서버(Render 등)에 배포하는 것이 적절합니다.
 
+교수자/학생 웹 프론트엔드를 다른 Origin에 올린 경우 `NIT_CORS_ORIGINS=https://your-frontend.example`를 설정합니다. 와일드카드 Origin은 허용하지 않습니다.
+
 ## API
 
 | 기능 | 메서드 및 URL | 권한 |
 | --- | --- | --- |
 | 상태 | GET /health | 공개 |
+| 내 수업 | GET /v1/courses/mine | 인증된 회원 |
+| 수업 교안 목록 | GET /v1/courses/{id}/materials | 해당 과목 회원 |
 | 과목 생성 | POST /v1/courses | 교수자 |
 | 학생 등록 | POST /v1/courses/{id}/members | 해당 과목 교수자 |
 | 수업 AI 정책 변경 | PUT /v1/courses/{id}/policy | 교수자 |
