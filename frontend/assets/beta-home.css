@@ -1,0 +1,54 @@
+/* LearningX shared beta preparation. Inherits the original question-coach-v3 tokens;
+   no new brand colors or unverified service state. */
+.beta-hero{padding:var(--s6) 0 var(--s8);background:var(--bg)}
+.beta-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"intro intro" "faculty student";align-items:start;gap:var(--s5)}
+.beta-intro{grid-area:intro;max-width:920px}
+.beta-intro h1{font-size:clamp(30px,3.5vw,46px);line-height:1.23;letter-spacing:-.02em;margin:var(--s2) 0 var(--s3);font-weight:800}
+.beta-intro h1 em{font-style:normal;color:var(--accent)}
+.beta-intro p{font-size:16px;color:var(--sub)}
+.beta-intro .beta-trust-note{font-size:13px;margin-top:var(--s2)}
+.beta-panel{min-width:0;border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--s5);background:var(--surface);display:grid;gap:var(--s3)}
+.beta-faculty{grid-area:faculty}
+.beta-student{grid-area:student}
+.beta-panel-head{display:flex;justify-content:space-between;align-items:center;gap:var(--s2)}
+.beta-mode{display:inline-block;font-size:12px;font-weight:800;background:var(--accent-soft);color:var(--accent);padding:4px 11px;border-radius:var(--r-pill)}
+.beta-mode-demo{color:var(--sub);background:var(--bg-soft)}
+.beta-side-label{font-size:13px;font-weight:700;color:var(--sub)}
+.beta-panel h2{font-size:24px;font-weight:800;line-height:1.35}
+.beta-panel h3{font-size:15px;font-weight:750}
+.beta-sub,.beta-student-note{font-size:13px;color:var(--sub);line-height:1.65}
+.beta-student-note{margin-top:var(--s1)}
+.beta-server-status{display:flex;align-items:center;gap:var(--s2);padding:11px 13px;background:var(--bg-soft);border-radius:var(--r-sm);font-size:13px;font-weight:650;color:var(--sub)}
+.beta-server-dot{display:block;flex:none;width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.beta-form-row{display:flex;gap:var(--s2);align-items:center}
+.beta-form-row>*{min-width:0}
+.beta-form-row input{flex:1}
+#beta-invite-code{width:100%;height:48px;padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:15px}
+#beta-invite-submit{flex:none}
+.beta-panel .field-label{margin:0 0 var(--s2)}
+.beta-panel form{min-width:0}
+.beta-panel input[type=text],.beta-panel input[type=password]{max-width:100%}
+.beta-panel input:disabled,.beta-panel button:disabled{cursor:not-allowed}
+.beta-panel button:disabled{background:var(--bg-soft);color:var(--sub);border-color:var(--line-strong)}
+.beta-error{font-size:13px;color:var(--err);font-weight:700;margin-top:var(--s2)}
+.beta-blocked-note{font-size:12px;color:var(--sub);border-left:3px solid var(--accent);padding:var(--s2) var(--s3);background:var(--bg-soft)}
+.beta-consent{display:grid;gap:7px;padding:var(--s3);background:var(--bg-soft);border-radius:var(--r-sm);font-size:12px;color:var(--sub)}
+.beta-consent label{display:flex;gap:8px;align-items:flex-start}
+.beta-consent input{margin-top:3px;accent-color:var(--accent);flex:none}
+.beta-consent strong{color:var(--ink)}
+.beta-upload{display:grid;gap:var(--s2)}
+.beta-drop{display:flex;align-items:center;justify-content:center;gap:9px;border:1.5px dashed var(--line-strong);padding:14px;border-radius:var(--r-sm);font-size:14px;color:var(--sub);background:var(--bg-soft)}
+.beta-drop strong{color:var(--ink)}
+.beta-drop span{font-size:22px;color:var(--accent);line-height:1}
+.beta-drop small{font-size:12px}
+.beta-upload input[type=file]{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;overflow:hidden}
+.beta-progress{display:grid;gap:var(--s2)}
+.beta-progress progress{width:100%;height:10px;accent-color:var(--accent)}
+.beta-progress label{font-size:12px;color:var(--sub)}
+#beta-class-code{width:100%;letter-spacing:.19em;text-align:center}
+.beta-demo-entry{border-top:1px solid var(--line);padding-top:var(--s4);margin-top:var(--s3);display:grid;gap:var(--s2)}
+.beta-demo-entry p{font-size:13px;color:var(--sub)}
+.beta-teacher-demo{display:block;color:var(--accent);text-align:center;font-size:13px;font-weight:700;padding:8px}
+.beta-demo-entry .btn.ghost{color:var(--accent);border-color:var(--accent);background:var(--surface)}
+@media(max-width:800px){.beta-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"student" "intro" "faculty";gap:var(--s4)}.beta-hero{padding:var(--s3) 0 var(--s7)}.beta-intro h1{font-size:32px}}
+@media(max-width:480px){.beta-layout{gap:var(--s3)}.beta-hero{padding-top:var(--s2)}.beta-panel{padding:var(--s4);gap:var(--s2)}.beta-panel h2{font-size:20px}.beta-student .beta-demo-entry{margin-top:0;padding-top:var(--s3)}.beta-intro h1{font-size:28px}.beta-form-row{flex-wrap:wrap}.beta-form-row button{width:100%}.beta-drop{flex-wrap:wrap;text-align:center}.beta-drop small{flex-basis:100%}}
