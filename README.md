@@ -2,8 +2,20 @@
 
 교수자 승인 교안 기반 질문 코칭 플랫폼의 전용 저장소입니다.
 
-- [백엔드 가이드](backend/README.md)
-- [백엔드 API](backend/learningx/api.py)
-- [자동 테스트](backend/tests/test_api.py)
+## 폴더
 
-현재 백엔드 MVP 개발 브랜치에서 검토 중이며, frozen NIT 교안 엔진은 별도 설치가 필요합니다. 운영용 비밀키 및 수업 자료는 저장소에 포함하지 않습니다.
+- [프론트엔드](frontend/README.md): 질문 코치 v3 시안 기반 정적 UI + 데모/실백엔드 연동
+- [실습실](frontend/app.html): 학생 질문 → 역질문 → 수정, 교수자 교안 검토·서명 UX
+- [백엔드 가이드](backend/README.md): FastAPI, 수업별 인증·권한, NIT frozen engine adapter
+- [백엔드 API](backend/learningx/api.py): 교수자 승인 및 학생 코칭 API
+- [자동 테스트](.github/workflows): backend + frontend 별도 검사
+
+## 배포 경계
+
+- Vercel은 `frontend/`만 GitHub에 연결하여 정적 사이트로 배포합니다.
+- **데모**에서는 어떤 실제 승인·코칭·저장도 하지 않습니다.
+- **서버 연결**은 별도 배포된 LearningX 백엔드 URL과 서버 발급 JWT가 필요합니다.
+- 기존 frozen NIT v1.6.2 교안 처리 엔진은 현재 백엔드 소스에 포함되지 않습니다. 설치 검증 전에는 실제 코칭 API가 열리지 않습니다.
+- 수업 자료·교수자 서명키·API 키·토큰은 공개 GitHub나 Vercel 프론트 환경변수에 올리지 않습니다.
+
+운영 파일럿에는 실제 교수자 검토·서명, 전용 영구 스토리지, 수업별 접근권한, 서버 E2E 검증이 추가로 필요합니다.
