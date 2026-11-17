@@ -8,7 +8,7 @@ import {betaConfig} from './beta-config.js';
 
 const $=id=>document.getElementById(id);
 export const normalizeClassCode=value=>String(value||'')
-  .replace(/[\\s-]/g,'').toUpperCase().replace(/[^A-Z2-9]/g,'').slice(0,6);
+  .replace(/[\s-]/g,'').toUpperCase().replace(/[^A-Z2-9]/g,'').slice(0,6);
 export const validClassCode=value=>/^[A-HJ-NP-Z2-9]{6}$/.test(value);
 const required=[
   'sharedApiBaseUrl','apiDocumentationUrl','inviteSecretName',
