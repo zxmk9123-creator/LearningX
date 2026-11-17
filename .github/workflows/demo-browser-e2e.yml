@@ -24,4 +24,5 @@ jobs:
       - name: Frontend smoke and two-tab E2E
         run: |
           node frontend/tests/smoke.mjs
+          node frontend/tests/demo_rehearsal.mjs
           python frontend/tests/demo_e2e.py
