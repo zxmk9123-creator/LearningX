@@ -1,0 +1,103 @@
+<section id="demo-workspace" class="demo-workspace" aria-label="교안 기반 수업 시연" hidden>
+  <div class="demo-workspace-head">
+    <div><span class="eyebrow">CLASSROOM DEMO</span><h2>한 브라우저로 이어지는 수업</h2><p class="small-muted">가상 교안 · 규칙 기반 질문 코치 · 실제 AI 호출 없음</p></div>
+    <button id="demo-reset" class="btn sm ghost" type="button">데모 초기화</button>
+  </div>
+  <div class="demo-tabs" role="tablist" aria-label="데모 사용자 역할">
+    <button id="demo-faculty-tab" type="button" role="tab" aria-controls="demo-faculty-panel" aria-selected="true" tabindex="0">교수자 화면 <span class="demo-unread" id="demo-unread" aria-label="새 질문 0개" hidden>0</span></button>
+    <button id="demo-student-tab" type="button" role="tab" aria-controls="demo-student-panel" aria-selected="false" tabindex="-1">학생 화면</button>
+  </div>
+  <p class="demo-status" id="demo-status" role="status" aria-live="polite"></p>
+  <section id="demo-faculty-panel" class="demo-panel" role="tabpanel" aria-labelledby="demo-faculty-tab" tabindex="0">
+    <div class="demo-card">
+      <span class="eyebrow">01 · 파일 첨부</span><h3>교안 선택</h3>
+      <p class="small-muted">선택한 PDF/PPTX의 파일명·용량·SHA-256만 실제로 확인합니다. 파일 본문은 전송하거나 저장하지 않습니다.</p>
+      <label id="demo-drop" class="demo-drop" for="demo-file">
+        <strong>파일을 끌어다 놓거나 선택하세요</strong><span>PDF/PPTX · 최대 100MB</span>
+        <input id="demo-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+      </label>
+      <p id="demo-upload-error" class="demo-inline-error" role="alert" hidden></p>
+      <dl id="demo-file-info" class="demo-file-info" hidden>
+        <div><dt>파일명</dt><dd id="demo-file-name"></dd></div>
+        <div><dt>파일 크기</dt><dd id="demo-file-size"></dd></div>
+        <div><dt>실제 SHA-256</dt><dd id="demo-file-hash" class="demo-hash"></dd></div>
+      </dl>
+      <ol class="demo-steps" aria-label="시연 단계" id="demo-steps">
+        <li data-step="upload"><span class="demo-step-symbol">1</span> 업로드 확인</li>
+        <li data-step="parse"><span class="demo-step-symbol">2</span> 텍스트·구조 추출 <small>(예시 화면으로 전환)</small></li>
+        <li data-step="review"><span class="demo-step-symbol">3</span> 교수자 검토 대기</li>
+      </ol>
+      <p class="demo-thinking" id="demo-thinking" role="status" aria-live="polite" hidden><span class="demo-spinner" aria-hidden="true"></span><span id="demo-thinking-text">생각 중 표시</span></p>
+    </div>
+    <div id="demo-results" class="demo-card" hidden>
+      <p class="demo-disclosure" id="demo-disclosure">데모 모드: 올린 파일은 분석하지 않았습니다. 아래는 예시 교안의 분석 결과입니다.</p>
+      <span class="eyebrow">02 · 예시 교안 분석 결과</span><h3 id="demo-example-title">미디어와 사회 3주차 · 의제설정 이론</h3>
+      <p class="small-muted">가상 NIT 블록을 시연합니다. 승인 불가 블록은 선택할 수 없습니다. 여기에 보이는 자료는 업로드 파일에서 추출한 내용이 아닙니다.</p>
+      <div class="demo-summary" id="demo-summary" aria-live="polite">
+        <span>후보 <strong id="demo-count-candidates">0</strong>쪽</span>
+        <span>품질 통과 <strong id="demo-count-pass">0</strong>쪽</span>
+        <span>승인 <strong id="demo-count-approved">0</strong>쪽</span>
+        <span>학생 코칭 <strong id="demo-coaching-ready">불가</strong></span>
+      </div>
+      <div id="demo-block-list" class="demo-block-list" aria-label="가상 교안 블록 목록"></div>
+      <p id="demo-approval-error" class="demo-inline-error" role="alert" hidden></p>
+      <div class="demo-actions"><button id="demo-approve" type="button" class="btn sm ghost">선택 항목 승인</button><button id="demo-start" type="button" class="btn sm" disabled>수업 시작</button></div>
+      <div id="demo-class-code-panel" class="demo-code-panel" hidden>
+        <strong>수업이 시작됐습니다</strong><output id="demo-class-code" class="demo-class-code" aria-label="6자리 수업 코드"></output>
+        <p>학생 탭에서 이 코드를 입력하세요. 혼동 문자 O·0·I·1은 사용하지 않습니다.</p>
+      </div>
+    </div>
+    <div class="demo-card">
+      <div class="demo-section-row"><div><span class="eyebrow">03 · 수업 중 질문</span><h3>익명 질문 보드</h3></div><button id="demo-read-questions" type="button" class="btn sm ghost">새 질문 확인</button></div>
+      <p class="small-muted">학생 이름은 수집·표시하지 않습니다. 질문 수준은 데모용 규칙 분류입니다.</p>
+      <div class="demo-question-groups" id="demo-question-groups" aria-live="polite"><p class="demo-empty">아직 제출된 질문이 없습니다.</p></div>
+    </div>
+  </section>
+  <section id="demo-student-panel" class="demo-panel" role="tabpanel" aria-labelledby="demo-student-tab" tabindex="0" hidden>
+    <div class="demo-card" id="demo-join-card">
+      <span class="eyebrow">01 · 수업 입장</span><h3>수업 코드 입력</h3>
+      <p class="small-muted">데모 모드는 같은 브라우저에서만 연결됩니다. 다른 기기 간 동기화는 지원하지 않습니다.</p>
+      <form id="demo-join-form" class="demo-inline-form" novalidate>
+        <label for="demo-code-entry" class="sr-only">6자리 수업 코드</label>
+        <input id="demo-code-entry" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="14" placeholder="예: ABC234" aria-describedby="demo-code-error">
+        <button class="btn sm" type="submit">수업 입장</button>
+      </form>
+      <p class="demo-inline-error" id="demo-code-error" role="alert" hidden></p>
+      <p class="small-muted" id="demo-sharing-note"></p>
+    </div>
+    <div id="demo-student-session" hidden>
+      <div class="demo-card">
+        <span class="eyebrow">02 · 질문 쓰기</span><h3>먼저 내 질문을 써 보세요</h3>
+        <p class="small-muted" id="demo-joined-title"></p>
+        <form id="demo-question-form" novalidate>
+          <label for="demo-question">오늘 배운 내용을 떠올리며 질문을 작성하세요.</label>
+          <textarea id="demo-question" rows="4" minlength="10" maxlength="2000" placeholder="예: 의제설정 이론은 뉴스 보도 빈도와 어떤 관계가 있나요?"></textarea>
+          <p class="small-muted">다른 학생에게는 익명으로 표시됩니다. 질문을 쓰기 전에는 어떤 AI 제안도 나타나지 않습니다.</p>
+          <p id="demo-question-error" class="demo-inline-error" role="alert" hidden></p>
+          <button class="btn sm" id="demo-question-submit" type="submit">질문 분석하기</button>
+        </form>
+      </div>
+      <div id="demo-coach-result" class="demo-card" hidden>
+        <span class="eyebrow">03 · 질문 수준</span><h3>내 질문을 더 깊게</h3>
+        <div class="demo-level-line"><strong id="demo-question-level"></strong><span>데모용 규칙 분류</span></div>
+        <p class="small-muted">정답이나 완성된 질문을 제시하지 않습니다. 추천 질문 칩을 선택해 빈칸을 직접 채워 주세요.</p>
+        <div id="demo-stems" class="demo-stems" aria-label="추천 질문 칩"></div>
+        <div id="demo-evidence" class="demo-evidence" aria-label="교수자 승인된 출처"></div>
+        <div id="demo-rewrite-box" hidden>
+          <form id="demo-rewrite-form" novalidate>
+            <label for="demo-rewrite">고쳐 묻기 · 내 생각으로 빈칸 완성</label>
+            <textarea id="demo-rewrite" rows="3" maxlength="2000"></textarea>
+            <p id="demo-rewrite-error" class="demo-inline-error" role="alert" hidden></p>
+            <button class="btn sm" type="submit">익명으로 질문 제출</button>
+          </form>
+        </div>
+        <div id="demo-submit-toast" class="demo-toast" role="status" aria-live="polite" hidden>익명으로 제출했어요</div>
+      </div>
+    </div>
+  </section>
+  <div id="demo-projector" class="demo-projector" role="dialog" aria-modal="true" aria-labelledby="demo-projector-title" hidden>
+    <div class="demo-projector-inner"><div class="demo-section-row"><h2 id="demo-projector-title">수업에서 다루기</h2><button id="demo-projector-close" class="btn sm ghost" type="button">닫기 (Esc)</button></div>
+      <p class="small-muted">익명 학생 질문 · 화면 공유용</p><blockquote id="demo-projector-question"></blockquote>
+    </div>
+  </div>
+</section>
