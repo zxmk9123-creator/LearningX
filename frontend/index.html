@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>질문 코치 (가칭)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="질문 코치 홈"><span class="mark" aria-hidden="true">?</span>질문 코치<small>가칭</small></a>
+    <nav aria-label="주요 메뉴">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+    </nav>
+    <a class="btn sm ghost" href="app.html">실습실 열기</a>
+  </div>
+  <nav class="mnav" aria-label="주요 메뉴 (모바일)">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+  </nav>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap grid">
+    <div>
+      <span class="eyebrow">AI 시대의 질문 수업 도구</span>
+      <h1>AI가 답하는 시대,<br><em>학생의 질문</em>으로<br>수업을 움직입니다</h1>
+      <p class="lead">학생은 질문을 쓰고, AI는 정답 대신 생각을 확장하는 역질문을 제안합니다. 교수자는 모인 질문으로 그날의 수업을 엽니다.</p>
+      <ul class="facts" aria-label="핵심 특징">
+        <li>질문은 학생이 직접 작성</li>
+        <li>질문 수정은 본인이 직접</li>
+        <li>교수자가 승인한 교안만 근거로 사용</li>
+      </ul>
+    </div>
+
+    <div class="entry">
+      <div class="tabs" role="tablist" aria-label="사용자 유형">
+        <button role="tab" id="tab-student" aria-selected="true" aria-controls="panel-student" tabindex="0">학생</button>
+        <button role="tab" id="tab-prof" aria-selected="false" aria-controls="panel-prof" tabindex="-1">교수자</button>
+      </div>
+
+      <div role="tabpanel" id="panel-student" aria-labelledby="tab-student">
+        <form id="join" novalidate>
+          <label class="field-label" for="code">6자리 수업 코드 UI 미리보기 (데모 전용)</label>
+          <input id="code" class="code" placeholder="AB12CD" autocomplete="off" inputmode="latin" aria-describedby="code-err code-hint">
+          <p class="err" id="code-err" aria-live="polite"></p>
+          <button class="btn block" type="submit">수업 입장</button>
+          <p class="hint" id="code-hint">아직 서버에서 6자리 수업 코드를 발급하지 않습니다. 코칭은 실습실에서 체험하세요.</p>
+        </form>
+      </div>
+
+      <div role="tabpanel" id="panel-prof" aria-labelledby="tab-prof" hidden>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept=".pdf,.pptx" aria-describedby="file-hint">
+          <b id="file-name">강의 교안 올리기</b>
+          <span id="file-hint">PDF·PPTX 선택 미리보기 · 실제 업로드는 실습실의 서버 연결에서 진행</span>
+        </label>
+        <ol class="steps" id="steps" aria-label="교안 처리 단계" hidden>
+          <li class="done"><span class="dot" aria-hidden="true">✓</span><span>텍스트·구조 추출<small>슬라이드별 내용과 역할 분류</small></span></li>
+          <li class="wait"><span class="dot" aria-hidden="true">!</span><span>교수자 검토 대기<small>그림·도표와 AI 분석 결과는 확인 전까지 사용하지 않습니다</small></span></li>
+          <li><span class="dot" aria-hidden="true">3</span><span>승인 후 학생 코칭에 사용<small>승인한 쪽만 근거로 인용됩니다</small></span></li>
+        </ol>
+        <button class="btn block" type="button" id="start" disabled>실습실에서 교안 처리하기</button>
+        <button class="btn ghost block" type="button" data-toast="지난 수업 요약은 준비 중입니다">지난 수업 질문 보기</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block soft" id="tour">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><span class="eyebrow">둘러보기</span><h2>질문 코치가 무엇을, 왜, 어떻게 하는지<br>다섯 페이지로 정리했습니다</h2></div>
+    </div>
+    <ul class="tour">
+      <li><a class="card" href="why.html"><span class="num">01</span><b>왜 질문인가</b><span class="d">표면의 현상에서 본질의 책임까지, 다섯 단계로 내려가는 질문</span><span class="go">보러 가기 →</span></a></li>
+      <li><a class="card" href="cards.html"><span class="num">02</span><b>AI 경각심 카드</b><span class="d">공식 표명·연구·보도로 근거 등급을 나눈 여덟 장의 카드</span><span class="go">보러 가기 →</span></a></li>
+      <li><a class="card" href="flow.html"><span class="num">03</span><b>수업 흐름</b><span class="d">질문 쓰기부터 교수자 설명까지, 한 수업 안의 다섯 단계</span><span class="go">보러 가기 →</span></a></li>
+      <li><a class="card" href="levels.html"><span class="num">04</span><b>질문 수준</b><span class="d">얕은·중간·깊은 질문과 질문 코치 예시 화면</span><span class="go">보러 가기 →</span></a></li>
+      <li><a class="card" href="principles.html"><span class="num">05</span><b>운영 원칙</b><span class="d">AI는 코치일 뿐, 생각을 대신하지 않는다는 세 가지 원칙</span><span class="go">보러 가기 →</span></a></li>
+    </ul>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
+    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>
