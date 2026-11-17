@@ -54,3 +54,33 @@ node tests/smoke.mjs
 5. 교수자 수업 생성·학생 등록·교안 처리·후보 승인·수업 정책 설정 후 학생 계정으로 역질문과 수정 기록을 확인합니다.
 
 임시 토큰 발급은 파일럿 관리자 전용이며 추후 학교 SSO/OIDC로 교체해야 합니다. 학생 식별 및 권한은 서버에서만 결정합니다.
+
+
+## 교안 기반 수업 데모 (Draft PR 전용)
+
+- /app.html?demo=faculty : 교수자 파일 첨부, 실제 SHA-256 계산, 가상 NIT 10쪽 승인, 수업 코드 발급 및 익명 질문 화면
+- /app.html?demo=student : 6자리 코드 입장, 규칙 기반 수준 분류, 승인된 근거만 출처 표시, 빈칸 질문 고쳐 쓰기
+- assets/demo-adapter.js : 데모 전용 로컬 상태, localStorage + BroadcastChannel 동기화; 저장소 차단 시 한 탭 역할 변경
+- assets/demo-workspace.js / .html / .css : 기존 실서버 코드인 assets/pilot.js와 분리된 화면 계층
+- data/demo-nit.json : 실제 강의 자료가 아닌 직접 작성한 가상 의제설정 교안 (3쪽 승인 가능, 7쪽 제한)
+- docs/demo-session-api-contract.md : 백엔드 수업 코드·입장·만료 계약 제안서 (백엔드 미수정)
+
+**중요:** 데모에서 올린 파일은 분석하지 않습니다. 이름·크기·SHA-256만 실제 계산합니다. 가상 교안의 분석 결과를 원본의 분석 결과로 소개하지 않습니다. 브라우저 기반 동기화이므로 다른 기기와 연결하지 않습니다.
+
+### 로컬 시연
+
+    cd frontend
+    python -m http.server 8001
+    # 교수자: http://localhost:8001/app.html?demo=faculty
+    # 학생:   http://localhost:8001/app.html?demo=student
+
+두 탭은 동일 브라우저 프로필을 사용해야 합니다. HTTPS 또는 localhost에서만 WebCrypto SHA-256이 동작합니다.
+
+### Playwright E2E
+
+    pip install playwright==1.58.0
+    python -m playwright install chromium
+    python frontend/tests/demo_e2e.py
+
+PR의 GitHub Actions는 Playwright Chromium을 설치해 동일 브라우저 컨텍스트의 두 페이지를 검사합니다.
+기존 백엔드 연결을 누르면 실서버 UI/HTTP 경로를 그대로 사용합니다.
