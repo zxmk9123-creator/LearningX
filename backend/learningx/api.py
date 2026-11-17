@@ -26,8 +26,8 @@ def bootstrap():
     secret()
     # Render's filesystem is ephemeral by default; do not quietly start with an
     # SQLite database when the intended Neon DATABASE_URL was not provisioned.
-    if os.getenv("RENDER_SERVICE_ID") and not os.getenv("DATABASE_URL"):
-        raise RuntimeError("DATABASE_URL must be configured on Render")
+    if (os.getenv("RENDER_SERVICE_ID") or os.getenv("NIT_SERVERLESS_RUNTIME") == "1") and not os.getenv("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL must be configured on the backend host")
     init_db()
 
 class CourseCreate(BaseModel):
@@ -115,6 +115,11 @@ def update_policy(course_id:str,data:CoursePolicy,db:Session=Depends(session),us
 async def upload_material(course_id:str,file:UploadFile=File(...),db:Session=Depends(session),user:User=Depends(actor)):
     require_course(db,course_id,user,"faculty")
     if not db.get(Course,course_id):raise HTTPException(404,"Course not found")
+    # Vercel /tmp is scratch space, not a durable faculty evidence store.
+    # Keep the entire upload -> approval -> coaching chain fail-closed until
+    # private object storage is installed with verified signed artifacts.
+    if os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("VERCEL") == "1":
+        raise HTTPException(503,"Private durable lesson storage is required for Vercel")
     filename=Path(file.filename or "").name
     ext=Path(filename).suffix.lower()
     if ext not in (".pdf",".pptx"):raise HTTPException(415,"PDF or PPTX only")
