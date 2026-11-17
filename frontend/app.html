@@ -8,14 +8,15 @@
 <link rel="stylesheet" href="assets/style.css">
 <link rel="stylesheet" href="assets/pilot.css">
 <link rel="stylesheet" href="assets/demo-workspace.css">
+<link rel="stylesheet" href="assets/beta-home.css">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 건너뛰기</a>
 <header><div class="wrap"><a class="logo" href="index.html"><span class="mark" aria-hidden="true">?</span> LearningX <small>질문 코치</small></a><nav aria-label="메뉴"><a href="index.html">소개</a><a href="flow.html">수업 흐름</a><a href="levels.html">질문 수준</a><a href="app.html" aria-current="page">실습실</a></nav><span class="pilot-top">Pilot prototype</span></div></header>
 <main id="main" class="pilot-main">
   <div class="wrap">
-    <div class="pilot-heading"><div><span class="eyebrow">LEARNINGX / PILOT WORKSPACE</span><h1>질문을 완성하는 연습실</h1><p>답을 대신 받기보다, 근거를 검토하고 더 좋은 질문으로 고쳐 보세요.</p></div><a class="btn sm ghost" href="principles.html">운영 원칙 보기</a></div>
-    <div class="mode-toggle" role="group" aria-label="접속 방식"><button id="demo-mode" type="button" class="active" aria-pressed="true">데모 체험</button><button id="api-mode" type="button" aria-pressed="false">백엔드 연결</button></div>
+    <div class="pilot-heading"><div><span class="eyebrow">LEARNINGX / PILOT WORKSPACE</span> <span class="beta-mode" id="pilot-runtime-badge">데모</span><h1>질문을 완성하는 연습실</h1><p>답을 대신 받기보다, 근거를 검토하고 더 좋은 질문으로 고쳐 보세요.</p></div><a class="btn sm ghost" href="principles.html">운영 원칙 보기</a></div>
+    <div class="mode-toggle" role="group" aria-label="접속 방식"><button id="demo-mode" type="button" class="active" aria-pressed="true">데모 체험</button><button id="api-mode" type="button" aria-pressed="false" hidden>백엔드 연결</button></div>
     <p class="pilot-notice" id="mode-notice" role="status">데모 모드: 모든 질문·답변·승인·이력은 예시이며, 실제 LLM 호출이나 교수자 서명은 발생하지 않습니다.</p>
     <section class="card pilot-connection" id="connection" hidden aria-labelledby="conn-title">
       <div class="sec-head pilot-sec-head"><div><span class="eyebrow">BACKEND CONNECTION</span><h2 id="conn-title">서버에 연결하기</h2></div></div>
@@ -82,5 +83,6 @@
 <footer><div class="wrap"><span><b>LearningX</b> · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span><span>실습용 프로토타입 · 데모/실서버 모드를 구분해 사용하세요</span></div></footer>
 <script src="assets/pilot.js" defer></script>
 <script type="module" src="assets/demo-workspace.js"></script>
+<script src="assets/pilot-dev.js" defer></script>
 </body>
 </html>
