@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 from typing import Literal
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from .storage import init_db, User, Course, Member, Material, Audit, Question, Revision
@@ -13,6 +14,11 @@ from .security import actor, session, require_course, secret
 from . import engine_adapter as nit
 
 app=FastAPI(title="LearningX NIT Backend",version="0.1.0",docs_url=None,redoc_url=None)
+# Frontend origins must be explicitly configured; no wildcard CORS with bearer tokens.
+origins=[x.strip() for x in os.getenv("NIT_CORS_ORIGINS","").split(",") if x.strip()]
+if origins:
+    app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=False,
+        allow_methods=["GET","POST","PUT"],allow_headers=["Authorization","Content-Type"])
 
 @app.on_event("startup")
 def bootstrap():
@@ -174,3 +180,27 @@ def my_questions(course_id:str,db:Session=Depends(session),user:User=Depends(act
     questions=db.query(Question).filter_by(course_id=course_id,student_id=user.id).order_by(Question.created_at).all()
     return {"items":[{"id":q.id,"text":q.text,"coaching":json.loads(q.feedback_json),
         "revisions":[{"id":r.id,"text":r.text} for r in db.query(Revision).filter_by(question_id=q.id,student_id=user.id).all()]} for q in questions]}
+
+
+@app.get("/v1/courses/mine")
+def my_courses(db:Session=Depends(session),user:User=Depends(actor)):
+    memberships=db.query(Member).filter_by(user_id=user.id).all()
+    courses=[]
+    for m in memberships:
+        c=db.get(Course,m.course_id)
+        if c:
+            courses.append({"id":c.id,"title":c.title,"role":m.role,
+                "policy":c.policy,"teacher_approved":c.teacher_approved})
+    return {"items":courses}
+
+@app.get("/v1/courses/{course_id}/materials")
+def course_materials(course_id:str,db:Session=Depends(session),user:User=Depends(actor)):
+    membership=db.query(Member).filter_by(course_id=course_id,user_id=user.id).first()
+    if not membership:
+        raise HTTPException(403,"Course access denied")
+    if not db.get(Course,course_id):
+        raise HTTPException(404,"Course not found")
+    materials=db.query(Material).filter_by(course_id=course_id).order_by(Material.created_at.desc()).all()
+    # No raw document content, files, or teacher review evidence is returned.
+    return {"items":[{"id":m.id,"filename":m.filename,
+        "status":"FACULTY_SIGNED" if nit.verified_count(Path(m.out_dir)) else "PENDING_FACULTY_REVIEW"} for m in materials]}
