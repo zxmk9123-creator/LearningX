@@ -69,3 +69,18 @@ body.demo-active .pilot-role,body.demo-active .pilot-grid{display:none}
 .demo-projector blockquote{font-size:clamp(27px,5vw,62px);font-weight:800;line-height:1.4;overflow-wrap:anywhere;margin:var(--s7) 0}
 @media(max-width:600px){.demo-card{padding:var(--s4)}.demo-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.demo-inline-form>*{width:100%}.demo-workspace-head h2{font-size:21px}.demo-class-code{letter-spacing:.10em}.demo-block{gap:var(--s2)}}
 @media(prefers-reduced-motion:reduce){.demo-spinner{animation:none}}
+
+/* Keep accessible labels in the accessibility tree without expanding 390px layouts. */
+.demo-workspace label.sr-only{
+  position:absolute;
+  display:block;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  clip-path:inset(50%);
+  white-space:nowrap;
+  border:0;
+}
