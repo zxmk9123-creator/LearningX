@@ -27,3 +27,10 @@
 - [Render Blueprint 신규 생성](https://dashboard.render.com/select-repo?type=blueprint)
 
 **주의:** 무료 Render 서버에는 영구 디스크가 없어 실제 교안 파일 업로드는 차단됩니다. 검증된 NIT 엔진도 서버에 아직 설치되지 않았으므로 `/health/db` 연결 검사와 코칭 파일럿 가동은 다른 단계입니다.
+
+## 권장 배포: Vercel API + Neon
+
+LearningX FastAPI 백엔드는 [Vercel 별도 프로젝트 구축 가이드](backend/VERCEL_DEPLOY.md)를 기준으로 배포합니다.
+같은 저장소에서 `frontend/`는 기존 `learning-x` 정적 사이트로, `backend/`는 신규 `learningx-api` FastAPI Function으로 각각 배포합니다. 기존 Oil&Fat Vercel 프로젝트를 변경하지 않습니다.
+
+현재는 **Neon 연결·인증/과목 API 서버 준비 단계**입니다. 검증된 NIT 엔진과 영구 비공개 교안 저장소가 아직 연결되지 않아 교안 업로드·교수자 승인·AI 코칭은 활성화되지 않았습니다. 기존 [Render Blueprint](render.yaml)는 대체 옵션으로 유지합니다.
