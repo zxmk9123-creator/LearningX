@@ -72,7 +72,12 @@ class Revision(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda:datetime.now(timezone.utc), nullable=False)
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///./learningx_dev.sqlite3")
+DB_URL = os.getenv("DATABASE_URL")
+if not DB_URL:
+    # Never silently write SQLite into an ephemeral serverless filesystem.
+    if os.getenv("NIT_SERVERLESS_RUNTIME") == "1" or os.getenv("RENDER_SERVICE_ID"):
+        raise RuntimeError("DATABASE_URL must be configured for hosted LearningX API")
+    DB_URL = "sqlite:///./learningx_dev.sqlite3"
 if DB_URL.startswith("postgres://"):
     DB_URL = "postgresql+psycopg://" + DB_URL[len("postgres://"):]
 elif DB_URL.startswith("postgresql://"):
