@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>질문 수준 · 질문 코치 (가칭)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="질문 코치 홈"><span class="mark" aria-hidden="true">?</span>질문 코치<small>가칭</small></a>
+    <nav aria-label="주요 메뉴">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html" aria-current="page">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+    </nav>
+    <a class="btn sm ghost" href="app.html">실습실 열기</a>
+  </div>
+  <nav class="mnav" aria-label="주요 메뉴 (모바일)">
+      <a href="why.html">왜 질문인가</a>
+      <a href="cards.html">AI 경각심 카드</a>
+      <a href="flow.html">수업 흐름</a>
+      <a href="levels.html" aria-current="page">질문 수준</a>
+      <a href="principles.html">운영 원칙</a><a href="app.html">실습실</a>
+  </nav>
+</header>
+
+<main id="main">
+<section class="block" id="levels">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><span class="eyebrow">질문 수준</span><h2>질문에도 깊이가 있습니다</h2></div>
+      <p>그레이서·퍼슨의 질문 분류와 블룸의 개정 분류학을 기준으로, ‘적용하기’ 이상의 질문을 목표로 합니다.</p>
+    </div>
+    <div class="ladder">
+      <div class="card">
+        <div class="lv"><span class="tag">얕은 질문</span><div><b>사실을 확인하는 질문</b><span class="eg">“OO 이론은 누가 만들었나요?”</span></div></div>
+        <div class="lv"><span class="tag">중간 질문</span><div><b>정의·비교를 묻는 질문</b><span class="eg">“A와 B의 차이는 무엇인가요?”</span></div></div>
+        <div class="lv"><span class="tag deep">깊은 질문</span><div><b>원인·결과·판단을 묻는 질문</b><span class="eg">“이 이론을 오늘날 SNS에 적용하면 어떻게 되나요?”</span></div></div>
+        <p class="levels-note">AI는 질문의 수준을 알려 주고 다음 단계의 줄기만 제안합니다. 완성된 질문은 학생이 씁니다.</p>
+      </div>
+
+      <div class="card coach" aria-label="질문 코치 예시">
+        <div class="bar"><span class="live">미디어와 사회 · 3주차</span><span>예시 화면</span></div>
+        <div class="body">
+          <div class="bubble me"><small>내 질문 · 익명</small>의제설정 이론은 누가 만들었나요?</div>
+          <div class="bubble ai">
+            <small>질문 코치 · 얕은 질문</small>
+            <p>사실을 확인하는 질문이에요. 교안에서 답을 찾을 수 있어요. 한 단계 더 나아가 볼까요? 아래 줄기 중 하나를 골라 <b>직접</b> 질문을 써 보세요.</p>
+            <button class="cite" type="button" aria-expanded="false" aria-controls="cite-pop">교안 p.3 · 교수자 승인됨</button>
+            <div class="cite-pop" id="cite-pop" hidden>예시 화면(실제 승인 서명 없음) · <b>교안 p.3</b> “의제설정 이론은 매콤스와 쇼(1972)가 제안했다.” 교수자가 학생 코칭 근거로 승인한 쪽만 인용됩니다.</div>
+          </div>
+          <span class="stems-label" id="stems-label">다음 단계 줄기</span>
+          <div class="stems" role="group" aria-labelledby="stems-label">
+            <button class="stem" type="button" aria-pressed="false" data-t="의제설정 이론을 ___ 상황에 적용하면 어떻게 되나요?"><b>적용하기</b> · ___를 ___ 상황에 적용하면?</button>
+            <button class="stem" type="button" aria-pressed="false" data-t="의제설정 이론과 ___의 차이는 어디서 생기나요?"><b>분석하기</b> · ___와 ___의 차이는 어디서?</button>
+            <button class="stem" type="button" aria-pressed="false" data-t="오늘날에도 ___라고 볼 수 있는 근거는 무엇인가요?"><b>평가하기</b> · ___라고 볼 수 있는 근거는?</button>
+          </div>
+          <form class="compose" id="compose" hidden novalidate>
+            <label class="field-label" for="q2">빈칸(___)을 내 생각으로 채워 질문을 완성하세요</label>
+            <textarea id="q2" maxlength="200" aria-describedby="q2-err q2-count"></textarea>
+            <p class="err" id="q2-err" aria-live="polite"></p>
+            <div class="row"><span class="count" id="q2-count">0 / 200</span><button class="btn sm" type="submit">질문 제출</button></div>
+          </form>
+          <p class="sent" id="sent" hidden role="status"></p>
+        </div>
+      </div>
+    </div>
+      <nav class="pager" aria-label="이전·다음 페이지">
+      <a href="flow.html"><small>← 이전</small><b>수업 흐름</b></a>
+      <a class="next" href="principles.html"><small>다음 →</small><b>운영 원칙</b></a>
+    </nav>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
+    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>
