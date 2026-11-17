@@ -66,7 +66,7 @@ class DemoE2E(unittest.TestCase):
     self.faculty.locator('#demo-approve').click()
     expect(self.faculty.locator('#demo-start')).to_be_enabled()
     self.faculty.locator('#demo-start').click()
-    expect(self.faculty.locator('#demo-class-code')).to_have_text(re.compile(r'^[A-HJ-NP-Z2-9]{6}
+    expect(self.faculty.locator('#demo-class-code')).to_have_text(re.compile(r'^[A-HJ-NP-Z2-9]{6}$'))
     return self.faculty.locator('#demo-class-code').text_content()
   def join(self,code):
     self.student.locator('#demo-code-entry').fill(code[:3].lower()+'-'+code[3:].lower())
