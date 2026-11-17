@@ -84,3 +84,10 @@ node tests/smoke.mjs
 
 PR의 GitHub Actions는 Playwright Chromium을 설치해 동일 브라우저 컨텍스트의 두 페이지를 검사합니다.
 기존 백엔드 연결을 누르면 실서버 UI/HTTP 경로를 그대로 사용합니다.
+
+### 발표 리허설과 실서버 데이터 경계
+
+- [고정 질문 3종·시연 순서·미리보기 대체 경로](docs/demo-rehearsal.md): 얕은/중간/깊은 규칙 분류를 자동 검사하며, 시연 직전 **데모 초기화**를 필수로 수행합니다.
+- `node frontend/tests/demo_rehearsal.mjs`: 실제 데모 분류기와 승인된 p.1의 출처만 나오는지 테스트합니다.
+- [실서버 학생 응답 계약](docs/demo-session-api-contract.md): 운영 시 **학생에게 승인된 블록만 서버에서 직렬화**해야 하며, 제외 블록이 DOM에만 없다는 검사로는 보안 요구를 충족하지 못합니다. 학생 HTTP 응답 본문과 잘못된 블록 ID 요청까지 별도 통합 테스트를 요구합니다.
+- PR #7의 Vercel Preview는 2026-11-17 점검 당시 Hobby 일일 배포 한도 초과로 생성되지 않았습니다. 사용 가능한 Preview URL과 경로 200 응답을 확인한 후 발표에 사용하고, 그렇지 않으면 사전 점검한 로컬 정적 서버를 사용합니다.
