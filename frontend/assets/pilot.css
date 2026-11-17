@@ -1,0 +1,39 @@
+.pilot-main{background:#f7f9fc;padding:40px 0 72px}
+.pilot-heading{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:25px}
+.pilot-heading h1{font-size:36px;letter-spacing:-.025em;margin:6px 0}
+.pilot-heading p{color:var(--sub)}
+.pilot-top{font-size:12px;color:var(--muted);font-weight:700}
+.mode-toggle{display:inline-flex;padding:4px;background:#e9eef5;border-radius:12px;gap:4px;margin:0 0 12px}
+.mode-toggle button{font-size:14px;background:transparent;border:0;border-radius:10px;padding:10px 20px;cursor:pointer;font-weight:700;color:var(--sub)}
+.mode-toggle button.active{background:#fff;color:var(--accent);box-shadow:0 1px 5px #263b5015}
+.pilot-notice{padding:11px 15px;border-left:4px solid #b45309;border-radius:8px;background:var(--warn-soft);font-size:13px;color:#704004;margin-bottom:18px}
+.pilot-notice.live{background:var(--accent-soft);border-left-color:var(--accent);color:var(--ink)}
+.pilot-connection{margin-bottom:18px}
+.pilot-sec-head{margin-bottom:8px}.pilot-sec-head h2{font-size:22px}
+.pilot-fields{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:14px 0}
+.pilot-fields label{flex:1;min-width:200px}
+.pilot-fields .btn{flex:0 0 auto}
+.pilot-work input:not([type=checkbox]):not([type=file]),.pilot-work select,.pilot-connection input,.pilot-work textarea{background:#fff;border:1px solid var(--line-strong);border-radius:11px;padding:11px 12px;width:100%;outline-offset:2px;font-size:15px}
+.pilot-work textarea{resize:vertical;line-height:1.6}
+.pilot-work label,.pilot-connection label{display:block;font-size:14px;font-weight:650;color:var(--sub)}
+.pilot-work label>input,.pilot-work label>select,.pilot-connection label>input{margin-top:6px}
+.pilot-role{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-bottom:16px}
+.small-muted{color:var(--sub);font-size:13px;line-height:1.6}
+.pilot-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;align-items:start}
+.pilot-work{min-height:480px;padding:28px}.pilot-work h2{font-size:25px;margin:3px 0 4px}
+.pilot-work>.pilot-fields{margin:24px 0}.pilot-work>label{margin:18px 0 10px}
+.pilot-step{display:flex;align-items:start;gap:12px;margin:22px 0 11px}.pilot-step h3{font-size:18px;margin:0 0 3px}
+.pilot-num{width:31px;height:31px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;color:var(--accent);background:var(--accent-soft);font-weight:800;font-size:13px;flex-shrink:0}
+.pilot-form{display:grid;gap:10px;margin-bottom:14px}.pilot-form button{justify-self:start}.pilot-form .btn{height:44px}
+.pilot-feedback{margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
+.pilot-feedback blockquote{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:10px;padding:18px 19px;font-weight:700;font-size:16px;line-height:1.7}
+.pilot-evidence{font-size:12px;color:var(--sub);margin:10px 0 24px}
+.pilot-history{margin-top:30px;border-top:1px solid var(--line);padding-top:20px}.pilot-history h3{font-size:17px;margin-bottom:10px}.pilot-history h3 small{font-size:12px;color:var(--accent)}
+.history-list{display:grid;gap:10px}.history-item{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fcfdff}.history-item b{font-size:13px;color:var(--sub)}.history-item p{font-size:14px;margin:5px 0}.history-item .revisions{color:var(--accent);font-size:13px;white-space:pre-wrap}
+.pilot-side{display:grid;gap:14px}.side-card{padding:23px}.side-card h3{font-size:18px;margin:7px 0}.side-card ol{padding-left:18px;font-size:14px;line-height:2.2}.side-card p{font-size:14px;line-height:1.7}.soft-side{background:#eaf1fb}
+.pilot-connection-status{font-size:13px;color:var(--sub)}
+.pilot-divider{border-top:1px solid var(--line);margin:22px 0}
+.pilot-inline{display:flex!important;align-items:center;gap:8px;min-width:140px!important}.pilot-inline input{width:18px;height:18px}
+.pilot-candidates{margin:15px 0;border:1px solid #dde6f7;border-radius:12px;background:#f9fbff;padding:18px}.pilot-candidates h3{font-size:17px}.candidate-list{display:grid;gap:8px;margin:15px 0}.candidate{border:1px solid var(--line);border-radius:10px;padding:12px;background:white;font-size:13px;display:flex!important;align-items:start;gap:10px}.candidate input{margin-top:4px}.candidate b,.candidate small{display:block}.candidate small{color:var(--sub);font-weight:400;line-height:1.6}
+.pilot-status{margin-top:16px;min-height:24px;font-size:14px;font-weight:650}.pilot-status.error{color:var(--err)}.pilot-status.success{color:var(--ok)}
+@media(max-width:860px){.pilot-grid{grid-template-columns:minmax(0,1fr)}.pilot-heading{align-items:start;flex-direction:column}.pilot-heading h1{font-size:30px}.pilot-work{padding:20px}.pilot-fields label{flex-basis:100%}}
