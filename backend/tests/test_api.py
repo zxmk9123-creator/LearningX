@@ -133,3 +133,16 @@ class BackendTests(unittest.TestCase):
                 json={"material_id":self.material_id,"question":"다른 학생 질문을 조회하겠습니다."})
             self.assertEqual(r.status_code,403)
             mock.assert_not_called()
+
+    def test_08_neon_readiness_endpoint(self):
+        r=self.req("GET","/health/db")
+        self.assertEqual(r.status_code,200,r.text)
+        self.assertEqual(r.json()["database"],"connected")
+
+    def test_09_render_free_does_not_accept_ephemeral_lesson_uploads(self):
+        with patch.dict(os.environ,{"RENDER_SERVICE_ID":"srv_test",
+            "NIT_STORAGE_DIR":"/tmp/learningx-lessons"}):
+            r=self.req("POST",f"/v1/courses/{self.course_id}/materials",self.tf,
+                files={"file":("lesson.pdf",b"%PDF-1.7\\nTEST","application/pdf")})
+        self.assertEqual(r.status_code,503,r.text)
+        self.assertIn("Durable document storage",r.json()["detail"])
