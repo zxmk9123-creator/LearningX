@@ -27,5 +27,5 @@ assert.match(home,/베타 서버|실제 베타/);
 assert.match(home,/app\.html\?demo=student/);
 assert.match(read('app.html'),/id="api-mode"[^>]*hidden/);
 assert.match(read('app.html'),/pilot-dev\.js/);
-assert.match(read('app.html'),/id="demo-workspace"/);
+assert.match(read('app.html'),/demo-workspace\.js/);
 console.log('OK: unconfigured beta guarded; explicit demo; developer URL/JWT isolated; no fabricated API requests');
