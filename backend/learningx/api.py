@@ -9,6 +9,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import text as sql_text
 from .storage import init_db, User, Course, Member, Material, Audit, Question, Revision
 from .security import actor, session, require_course, secret
 from . import engine_adapter as nit
@@ -23,6 +24,10 @@ if origins:
 @app.on_event("startup")
 def bootstrap():
     secret()
+    # Render's filesystem is ephemeral by default; do not quietly start with an
+    # SQLite database when the intended Neon DATABASE_URL was not provisioned.
+    if os.getenv("RENDER_SERVICE_ID") and not os.getenv("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL must be configured on Render")
     init_db()
 
 class CourseCreate(BaseModel):
@@ -63,6 +68,15 @@ def material_for(db,material_id,course_id=None):
 @app.get("/health")
 def health():
     return {"status":"ok","service":"learningx-backend"}
+
+@app.get("/health/db")
+def database_health(db:Session=Depends(session)):
+    """Read-only check; suppress connection strings and SQL exception details."""
+    try:
+        db.execute(sql_text("SELECT 1"))
+        return {"status":"ok","database":"connected"}
+    except Exception as exc:
+        raise HTTPException(503, "Database unavailable") from exc
 
 @app.post("/v1/courses",status_code=201)
 def create_course(data:CourseCreate,db:Session=Depends(session),user:User=Depends(actor)):
@@ -108,6 +122,10 @@ async def upload_material(course_id:str,file:UploadFile=File(...),db:Session=Dep
     if len(data)>25*1024*1024:raise HTTPException(413,"File too large")
     if not data.startswith(b"%PDF-") and not (ext==".pptx" and data.startswith(b"PK")):
         raise HTTPException(422,"Invalid file signature")
+    # Render Free's temporary filesystem must not be used for faculty evidence.
+    # An attached Render Disk should be mounted at a non-temporary path.
+    if os.getenv("RENDER_SERVICE_ID") and os.getenv("NIT_STORAGE_DIR","").startswith(("/tmp/","/var/tmp/")):
+        raise HTTPException(503,"Durable document storage is required before uploads")
     # Private filesystem only. No public static route for raw teacher materials.
     storage=Path(os.getenv("NIT_STORAGE_DIR","./private_lessons")).resolve()
     mid=os.urandom(16).hex()
