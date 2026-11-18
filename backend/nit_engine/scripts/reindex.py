@@ -8,6 +8,8 @@ def reindex(out, section_size=8):
     doc=json.loads((out/'document.json').read_text(encoding='utf-8'))
     from quality_gate import annotate_document,audit
     annotate_document(doc)
+    from evidence_gate import enforce
+    enforce(doc)
     from canonical_ir import save as save_ir
     save_ir(out,doc)
     write_json(out/'document.json',doc)

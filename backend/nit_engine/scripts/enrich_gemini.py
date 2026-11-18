@@ -84,8 +84,8 @@ def run(args):
                     name,state=future.result();execution['cached' if state=='cached' else 'success']+=1
                     print(name,state)
                 except Exception as e:
-                    execution['failed'].append({'job':job.get('page',job.get('section_id')),'error':str(e)[:300]})
-                    print('ERROR',job.get('page',job.get('section_id')),str(e))
+                    execution['failed'].append({'job':job.get('page',job.get('section_id')),'error':type(e).__name__})
+                    print('ERROR',job.get('page',job.get('section_id')),type(e).__name__)
         path=out/f'{args.kind}_execution_report.json'
         path.write_text(json.dumps(execution,ensure_ascii=False,indent=2),encoding='utf-8')
         return 1 if execution['failed'] else 0

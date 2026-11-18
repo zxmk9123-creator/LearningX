@@ -1,36 +1,32 @@
 # LearningX · NIT
 
-교수자 승인 교안 기반 질문 코칭 플랫폼의 전용 저장소입니다.
+교수자가 승인한 교안 근거를 사용해 학생의 질문 개선을 돕는 FastAPI·정적 웹 플랫폼입니다.
 
-## 폴더
+- 프런트엔드 — `frontend/`, Vercel 정적 배포
+- API·분석 워커 — `backend/`, Northflank 독립 프로세스
+- 데이터 — Neon PostgreSQL과 비공개 S3 호환 객체 저장소
+- 분석 엔진 — `backend/nit_engine/`, PDF/PPTX 추출·품질 판정·교수자 서명 검증
 
-- [프론트엔드](frontend/README.md): 질문 코치 v3 시안 기반 정적 UI + 데모/실백엔드 연동
-- [실습실](frontend/app.html): 학생 질문 → 역질문 → 수정, 교수자 교안 검토·서명 UX
-- [백엔드 가이드](backend/README.md): FastAPI, 수업별 인증·권한, NIT frozen engine adapter
-- [백엔드 API](backend/learningx/api.py): 교수자 승인 및 학생 코칭 API
-- [자동 테스트](.github/workflows): backend + frontend 별도 검사
+## 교안 처리
 
-## 배포 경계
+서명 URL 발급 → 저장소 직접 업로드 → 크기 확인 → DB 작업 큐 → 워커 해시 검증·기본 추출 → 비공개 산출물 저장 → 교수자 검토·서명 → 승인 근거 검색·질문 코칭.
 
-- Vercel은 `frontend/`만 GitHub에 연결하여 정적 사이트로 배포합니다.
-- **데모**에서는 어떤 실제 승인·코칭·저장도 하지 않습니다.
-- **서버 연결**은 별도 배포된 LearningX 백엔드 URL과 서버 발급 JWT가 필요합니다.
-- 기존 frozen NIT v1.6.2 교안 처리 엔진은 현재 백엔드 소스에 포함되지 않습니다. 설치 검증 전에는 실제 코칭 API가 열리지 않습니다.
-- 수업 자료·교수자 서명키·API 키·토큰은 공개 GitHub나 Vercel 프론트 환경변수에 올리지 않습니다.
+작업의 `READY`는 기본 추출 산출물을 사용할 수 있다는 의미입니다. `analysis_coverage`는 native extraction, OCR, Vision, 의미 분석 및 교수자 승인 필요 여부를 별도로 제공합니다. 기본 워커는 native 추출만 수행합니다. [선택적 OCR·Vision](backend/DEEP_ANALYSIS.md)은 전용 이미지와 환경변수로 활성화하며, 결과는 교수자 서명 근거로 자동 승격되지 않습니다. 의미 분석과 오디오 전사는 미연결 상태입니다. 스캔·도표 중심 자료는 사용 가능한 근거가 제한될 수 있습니다.
 
-운영 파일럿에는 실제 교수자 검토·서명, 전용 영구 스토리지, 수업별 접근권한, 서버 E2E 검증이 추가로 필요합니다.
+정답·해설 표기가 있는 페이지, 미검증 OCR·AI 해석, 교수자 노트는 학생 근거로 승인하지 않습니다. 과목 권한과 승인 서명은 서버에서 검증합니다.
 
-## 백엔드 Render 배포
+## 실행·검증
 
-- [Render Blueprint](render.yaml): FastAPI 서비스만 Singapore 무료 플랜으로 구성
-- [배포 및 Neon 연결 가이드](backend/RENDER_DEPLOY.md): DB 환경변수, 헬스체크, 교수자·학생 JWT 발급
-- [Render Blueprint 신규 생성](https://dashboard.render.com/select-repo?type=blueprint)
+배포 변수와 두 프로세스의 실행 방법은 [Northflank 가이드](backend/NORTHFLANK_DEPLOY.md)를 참조하세요. 실제 교안·비밀키·토큰을 저장소에 커밋하지 마세요.
 
-**주의:** 무료 Render 서버에는 영구 디스크가 없어 실제 교안 파일 업로드는 차단됩니다. 검증된 NIT 엔진도 서버에 아직 설치되지 않았으므로 `/health/db` 연결 검사와 코칭 파일럿 가동은 다른 단계입니다.
+```bash
+python -m pip install -r backend/requirements.txt
+cd backend
+python -m unittest discover -s tests -v
+```
 
-## 권장 배포: Vercel API + Neon
+실물 PPTX 회귀는 `NIT_GOLDEN_PPTX_PATH`로 원본 파일 경로를 지정해야 실행됩니다. 대용량 실물 교안과 실제 LLM 품질은 별도 검증 대상입니다. 학생 로그인·수업 코드 입장·교수자 전체 학습 기록 화면은 후속 구현 범위입니다.
 
-LearningX FastAPI 백엔드는 [Vercel 별도 프로젝트 구축 가이드](backend/VERCEL_DEPLOY.md)를 기준으로 배포합니다.
-같은 저장소에서 `frontend/`는 기존 `learning-x` 정적 사이트로, `backend/`는 신규 `learningx-api` FastAPI Function으로 각각 배포합니다. 기존 Oil&Fat Vercel 프로젝트를 변경하지 않습니다.
+[배포 검증 항목](backend/DEPLOYMENT_GATE.md) · [업로드 구조](backend/UPLOAD_ARCHITECTURE.md)
 
-현재는 **Neon 연결·인증/과목 API 서버 준비 단계**입니다. 검증된 NIT 엔진과 영구 비공개 교안 저장소가 아직 연결되지 않아 교안 업로드·교수자 승인·AI 코칭은 활성화되지 않았습니다. 기존 [Render Blueprint](render.yaml)는 대체 옵션으로 유지합니다.
+[실물 교안 기본 추출 벤치마크](docs/INGESTION_BENCHMARK_2026-11-18.md)

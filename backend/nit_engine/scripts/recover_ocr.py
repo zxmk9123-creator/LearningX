@@ -68,7 +68,7 @@ def recover(source,out,engine='tesseract',language='kor+eng',dpi=160,max_pages=N
                     'verification':'unverified_ocr','ocr_engine':engine})
                 entry['ocr_state']='complete'
             except Exception as e:
-                entry['ocr_state']='failed';report['failed'].append({'page':n,'error':str(e)[:250]})
+                entry['ocr_state']='failed';report['failed'].append({'page':n,'error':type(e).__name__})
     # Atomic JSON write. Rebuilding derived indexes is necessary after evidence changes.
     temp=docpath.with_suffix('.tmp');write_json(temp,doc);temp.replace(docpath)
     if auto_reindex:report['indexes']=reindex(out)

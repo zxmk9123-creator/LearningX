@@ -15,6 +15,7 @@ def canonical_role(role):
 # Avoid treating routine references to dates or weeks as lecture boundaries.
 REVIEW=re.compile(r'생각해\s*볼\s*문제|복습\s*문제|연습\s*문제|정답\s*확인',re.I)
 ADMIN=re.compile(r'수업\s*운영|강의\s*소개|교과목\s*정보|출석\s*안내|시험\s*일정|팀\s*프로젝트\s*진행표|팀프로젝트\s*[-–]|오리엔테이션\s*끝난',re.I)
+ANSWER_LABEL=re.compile(r'(?:^|[\n\v])\s*(?:정답|해설|모범\s*답안|예시\s*답안|answer\s*key|solution)\s*[:：]',re.I)
 ANSWER=re.compile(r'(?<=\v)\s*:\s*[^\v\n]+|(?<=\n)\s*:\s*[^\v\n]+')
 
 def get_text(page):
@@ -42,6 +43,7 @@ def classify_page(page,filename=''):
     first=compact[:850]
     slide=page['page'];filename=unicodedata.normalize('NFKC',filename)
     if page.get('hidden_slide'):return 'administrative_appendix'
+    if ANSWER_LABEL.search(txt):return 'provided_answer'
     if REVIEW.search(first):return 'review_question'
     if BREAK.search(first):return 'break'
     if PREVIEW.search(first):return 'preview'

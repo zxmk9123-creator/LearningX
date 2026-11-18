@@ -1,0 +1,2 @@
+# Optional provider SDK; never required for native-only ingestion.
+google-genai>=1,<2

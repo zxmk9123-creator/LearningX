@@ -14,6 +14,9 @@ jobs:
   build:
     name: Build and inspect Python container (no publish)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        deep_runtime: [0, 1]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +25,7 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          build-args: NIT_DEEP_RUNTIME=${{ matrix.deep_runtime }}
           push: false
           load: true
           tags: learningx-northflank:test
@@ -44,3 +48,14 @@ jobs:
           exit_code=$?
           set -e
           test "$exit_code" -eq 2
+      - name: Validate optional OCR and Vision dependencies
+        if: matrix.deep_runtime == 1
+        run: |
+          docker run --rm --entrypoint python learningx-northflank:test -c '
+          import shutil, subprocess
+          from google import genai
+          assert shutil.which("libreoffice")
+          langs = subprocess.check_output(["tesseract", "--list-langs"], text=True)
+          assert "kor" in langs and "eng" in langs
+          print("Optional Korean OCR and Vision dependencies available")
+          '

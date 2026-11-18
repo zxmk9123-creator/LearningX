@@ -11,6 +11,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Opt-in image for OCR / Vision workers; keep the free native worker lightweight.
+ARG NIT_DEEP_RUNTIME=0
+RUN if [ "$NIT_DEEP_RUNTIME" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+      tesseract-ocr tesseract-ocr-kor tesseract-ocr-eng libreoffice-impress fonts-noto-cjk \
+      && rm -rf /var/lib/apt/lists/*; fi
+
+COPY requirements-deep.txt /app/requirements-deep.txt
+RUN if [ "$NIT_DEEP_RUNTIME" = "1" ]; then python -m pip install -r /app/requirements-deep.txt; fi
+
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 

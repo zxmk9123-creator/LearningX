@@ -62,18 +62,29 @@
       </div>
 
       <div role="tabpanel" id="panel-prof" aria-labelledby="tab-prof" hidden>
-        <label class="drop" id="drop">
-          <input type="file" id="file" accept=".pdf,.pptx" aria-describedby="file-hint">
-          <b id="file-name">강의 교안 올리기</b>
-          <span id="file-hint">PDF·PPTX 선택 미리보기 · 실제 업로드는 실습실의 서버 연결에서 진행</span>
-        </label>
-        <ol class="steps" id="steps" aria-label="교안 처리 단계" hidden>
-          <li class="done"><span class="dot" aria-hidden="true">✓</span><span>텍스트·구조 추출<small>슬라이드별 내용과 역할 분류</small></span></li>
-          <li class="wait"><span class="dot" aria-hidden="true">!</span><span>교수자 검토 대기<small>그림·도표와 AI 분석 결과는 확인 전까지 사용하지 않습니다</small></span></li>
-          <li><span class="dot" aria-hidden="true">3</span><span>승인 후 학생 코칭에 사용<small>승인한 쪽만 근거로 인용됩니다</small></span></li>
-        </ol>
-        <button class="btn block" type="button" id="start" disabled>실습실에서 교안 처리하기</button>
-        <button class="btn ghost block" type="button" data-toast="지난 수업 요약은 준비 중입니다">지난 수업 질문 보기</button>
+        <form id="faculty-beta">
+          <label class="field-label" for="faculty-invite">교수자 베타 초대 코드</label>
+          <input id="faculty-invite" type="password" required autocomplete="off" minlength="43" maxlength="43">
+          <label class="field-label" for="beta-title">수업 이름</label>
+          <input id="beta-title" required minlength="2" maxlength="180">
+          <label class="drop" for="beta-file">
+            <input type="file" id="beta-file" accept=".pdf,.pptx" required aria-describedby="beta-file-hint">
+            <b>강의 교안 선택</b>
+            <span id="beta-file-hint">PDF·PPTX, 최대 100MB</span>
+          </label>
+          <p class="hint">비공개 베타에서는 테스트용 교안만 사용해 주세요.</p>
+          <label><input id="beta-consent" type="checkbox" required> 교안을 공유 서버에 업로드하고 분석하는 데 동의합니다.</label>
+          <button class="btn block" type="submit">업로드하고 분석 시작</button>
+        </form>
+        <p id="beta-status" role="status" aria-live="polite"></p>
+        <button class="btn ghost block" id="beta-resume" type="button" hidden>이어서 진행</button>
+        <form id="beta-review" hidden>
+          <fieldset><legend>학생 질문 코칭의 근거로 사용할 내용을 선택하세요</legend>
+            <div id="beta-candidates"></div>
+            <label id="beta-media" hidden><input id="beta-ack" type="checkbox"> 내레이션이 분석되지 않았음을 확인했습니다.</label>
+          </fieldset>
+          <button class="btn block" type="submit">선택한 근거 승인</button>
+        </form>
       </div>
     </div>
   </div>
@@ -98,11 +109,12 @@
 <footer>
   <div class="wrap">
     <span><b>질문 코치</b> (가칭) · © 2026 NIT 7기 2조, 한양대학교 글로벌사회혁신단</span>
-    <span>소개·예시 화면 · 실제 코칭은 실습실의 서버 연결 모드에서 이용</span>
+    <span>교수자 교안 분석 베타 · 학생 실습 데모</span>
   </div>
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="assets/app.js"></script>
+<script src="assets/faculty-beta.js"></script>
 </body>
 </html>

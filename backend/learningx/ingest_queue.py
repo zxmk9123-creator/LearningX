@@ -7,6 +7,7 @@ external (durable queue/worker runner) and must be configured separately.
 import hashlib
 import hmac
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ from .storage import Course, IngestJob, Material, SessionLocal
 from .security import actor, require_course, session
 from . import engine_adapter as nit, private_store
 
+logger = logging.getLogger(__name__)
 router=APIRouter(prefix="/v1")
 MAX_UPLOAD_BYTES=100 * 1024 * 1024  # 32.9 MB PPTX supported; can lift only after budget tests.
 UPLOAD_TTL_SECONDS=900
@@ -178,6 +180,20 @@ async def retry_upload(course_id:str,upload_id:str,db:Session=Depends(session),u
 
 def _claim(db,job_id=None):
     now=datetime.now(timezone.utc)
+    # Polling without a job ID must also close exhausted, expired leases.
+    expired = db.query(IngestJob).filter(
+        IngestJob.status == "RUNNING",
+        IngestJob.lease_until < now,
+        IngestJob.attempts >= MAX_ATTEMPTS,
+    )
+    if job_id is not None:
+        expired = expired.filter(IngestJob.id == job_id)
+    expired.update({
+        IngestJob.status: "FAILED",
+        IngestJob.error_code: "WORKER_TIMEOUT",
+        IngestJob.lease_until: None,
+    }, synchronize_session=False)
+    db.commit()
     query=db.query(IngestJob)
     if job_id is not None:
         query=query.filter(IngestJob.id==job_id)
@@ -242,19 +258,34 @@ def process_next_job(job_id=None):
     with SessionLocal() as db:
         row=db.get(IngestJob,claimed)
         if not row:return {"result":"MISSING"}
+        stage = "storage_init"
         try:
             store=private_store.require_store()
             with tempfile.TemporaryDirectory(prefix="learningx-worker-") as td:
                 root=Path(td)
                 ext=Path(row.filename).suffix.lower()
                 original=root/("source"+ext)
+                stage = "download"
                 digest=_download_verified(store,row,original)
                 parsed=root/"parsed"
+                stage = "parse"
                 document=nit.ingest(original,parsed)
                 if document["source"]["sha256"]!=digest:
                     raise ValueError("Parser source digest mismatch")
+                stage = "optional_analysis"
+                from .deep_analysis import enrich
+                document = enrich(original, parsed, nit.root())
+                stage = "publish"
                 location=store.publish_new(root,row.course_id,row.id)
-                coverage=document.get("media_coverage",{})
+                stage = "database_commit"
+                coverage=dict(document.get("media_coverage",{}))
+                coverage["native_extraction"] = "COMPLETE"
+                coverage["vision"] = document.get("vision_execution", {
+                    "status": "UNKNOWN", "completed_jobs": 0,
+                })
+                coverage["ocr"] = document["deep_analysis"]["ocr"]
+                coverage["semantic_analysis"] = "NOT_RUN"
+                coverage["faculty_approval_required"] = True
                 if ext==".pptx":
                     coverage.setdefault("audio_status","UNKNOWN_NOT_VERIFIED")
                     coverage.setdefault("warning","PPTX narration was not transcribed")
@@ -274,6 +305,7 @@ def process_next_job(job_id=None):
                 db.commit()
                 return {"result":"READY","job_id":claimed}
         except Exception as exc:
+            logger.warning("learningx_ingest_failed stage=%s exception=%s", stage, type(exc).__name__)
             db.rollback()
             row=db.get(IngestJob,claimed)
             if row:

@@ -7,13 +7,13 @@ import shutil
 import tempfile
 from contextlib import ExitStack
 from typing import Literal
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
 from .storage import init_db, User, Course, Member, Material, Audit, Question, Revision
-from .security import actor, session, require_course, secret
+from .security import actor, session, require_course, secret, issue_token
 from . import engine_adapter as nit
 from . import private_store
 from .ingest_queue import router as ingest_router
@@ -82,6 +82,29 @@ def database_health(db:Session=Depends(session)):
         return {"status":"ok","database":"connected"}
     except Exception as exc:
         raise HTTPException(503, "Database unavailable") from exc
+
+class FacultyBetaInvite(BaseModel):
+    code: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+@app.post("/v1/beta/faculty/session")
+def faculty_beta_session(data: FacultyBetaInvite, response: Response, db: Session = Depends(session)):
+    """Exchange an operator-issued, per-faculty 256-bit invite for a short session."""
+    try:
+        invites = json.loads(os.getenv("NIT_BETA_FACULTY_INVITES", "{}"))
+    except ValueError:
+        invites = {}
+    if not isinstance(invites, dict) or not invites:
+        raise HTTPException(503, "Faculty beta is not enabled")
+    digest = hashlib.sha256(data.code.encode("ascii")).hexdigest()
+    user_id = invites.get(digest)
+    user = db.get(User, user_id) if isinstance(user_id, str) and user_id else None
+    if not user or not user.active or user.role != "faculty":
+        raise HTTPException(401, "Invalid beta invitation")
+    if os.getenv("NIT_WORKER_BACKEND") != "northflank_poll":
+        raise HTTPException(503, "Beta analysis worker is not configured")
+    private_store.require_store()
+    response.headers["Cache-Control"] = "no-store"
+    return {"access_token": issue_token(user.id, minutes=60)}
 
 @app.post("/v1/courses",status_code=201)
 def create_course(data:CourseCreate,db:Session=Depends(session),user:User=Depends(actor)):

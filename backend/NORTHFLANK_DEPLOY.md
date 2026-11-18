@@ -90,3 +90,9 @@ Northflank references:
 - https://northflank.com/docs/v1/application/build/build-with-a-dockerfile
 - https://northflank.com/docs/v1/application/network/configure-ports
 - https://northflank.com/docs/v1/application/observe/configure-health-checks
+
+## Faculty beta from the homepage
+
+Deploy the API branch containing `POST /v1/beta/faculty/session` before deploying its matching frontend. Keep the beta closed until the worker and private upload round trip have been verified. Configure `NIT_BETA_FACULTY_INVITES` as a runtime secret containing a JSON object mapping SHA-256 hex digests to existing active faculty user IDs. Generate one distinct code per instructor using Python's `secrets.token_urlsafe(32)` and send the raw code privately. The API exchanges a valid code for a 60-minute session. Removing a digest prevents new exchanges.
+
+The faculty homepage uses the fixed Northflank API, direct private uploads, and the existing signed evidence approval endpoints. Student classroom entry remains a demo. To enable live faculty use, the API and worker need the private storage configuration above, `NIT_WORKER_BACKEND=northflank_poll`, and the API needs `NIT_REVIEW_SIGNING_KEY` and `NIT_CORS_ORIGINS` for the exact frontend deployment origin.
