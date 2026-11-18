@@ -15,7 +15,7 @@
 | 파일 | 역할 |
 |---|---|
 | `index.html` | 진입: 학생 코드 입장 / 교수자 시작 (기존 소개는 `intro.html`) |
-| `teacher.html` + `assets/qu-teacher.js` | 초대 코드 → 내 수업 → 교안 올리기 → 검토·승인(AI 코칭 동의) → 수업 중 질문 보드(5초 폴링, 수준 필터, 숨기기) → 화면에 띄우기 → 종료·CSV |
+| `teacher.html` + `assets/qu-teacher.js` | Google 로그인 → 내 수업 → 교안 올리기 → 검토·승인(AI 코칭 동의) → 수업 중 질문 보드(5초 폴링, 수준 필터, 숨기기) → 화면에 띄우기 → 종료·CSV |
 | `student.html` + `assets/qu-student.js`, `assets/qu-plant.js` | 코드 입장(익명) → 대화형 질문 코치 + 콩나무 → 교수자에게 보내기 → 내 질문 |
 | `assets/qu.css`, `assets/qu-api.js` | 디자인 사양 토큰(세이지 팔레트, Freesentation) · 공용 API 클라이언트 |
 

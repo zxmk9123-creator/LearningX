@@ -1,6 +1,6 @@
 /* Question-up · 교수자 흐름
-   초대 → 내 수업 → 교안 올리기 → 검토·승인 → 수업 중 보드 → 화면에 띄우기 → 종료·CSV
-   토큰은 메모리에만 둡니다. 새로고침하면 다시 초대 코드를 입력합니다. */
+   로그인 → 내 수업 → 교안 올리기 → 검토·승인 → 수업 중 보드 → 화면에 띄우기 → 종료·CSV
+   토큰은 메모리에만 둡니다. 새로고침하면 Google 계정으로 다시 로그인합니다. */
 (() => {
   'use strict';
   const { el, client, LEVEL, relTime } = window.QU;
@@ -88,33 +88,48 @@
   window.addEventListener('hashchange', render);
 
   /* ---------- 1 · 초대 코드 ---------- */
-  function renderLogin() {
+  let googleButtonReady = false;
+  let loadingGoogle = false;
+  async function renderLogin() {
     if (token) return go('courses');
     header({});
     screen('login');
-    $('invite').focus();
-  }
-
-  $('login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const code = $('invite').value.trim();
-    const btn = e.submitter || e.target.querySelector('button');
-    setError($('login-error'), null);
-    if (!/^[A-Za-z0-9_-]{43}$/.test(code)) {
-      return setError($('login-error'), '초대 코드 형식이 올바르지 않습니다. 받은 코드를 그대로 붙여 넣어 주세요.');
-    }
-    busy(btn, true, '확인 중…');
+    if (googleButtonReady || loadingGoogle) return;
+    loadingGoogle = true;
+    const status = $('login-error');
+    status.textContent = '로그인 준비 중…';
     try {
-      const res = await api('/v1/beta/faculty/session', { method: 'POST', body: { code } });
-      token = res.access_token;
-      $('invite').value = '';
-      go('courses');
+      const config = await api('/v1/faculty/auth/config');
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.onload = resolve;
+        script.onerror = () => { script.remove(); reject(new Error('Google 로그인 화면을 불러오지 못했습니다.')); };
+        document.head.append(script);
+      });
+      window.google.accounts.id.initialize({
+        client_id: config.client_id,
+        callback: async ({ credential }) => {
+          status.textContent = '교수자 계정 확인 중…';
+          try {
+            const result = await api('/v1/faculty/auth/google', { method: 'POST', body: { credential } });
+            token = result.access_token;
+            status.textContent = '';
+            go('courses');
+          } catch (err) {
+            status.textContent = err.status === 403 ? '등록된 교수자 Google 계정으로 로그인해 주세요.' : err.message;
+          }
+        },
+      });
+      window.google.accounts.id.renderButton($('google-signin'), { theme: 'outline', size: 'large' });
+      googleButtonReady = true;
+      status.textContent = '';
     } catch (err) {
-      setError($('login-error'), err.status === 401 ? '초대 코드를 확인할 수 없습니다.' : err);
+      status.textContent = err.status === 503 ? '교수자 Google 로그인 설정을 준비 중입니다.' : err.message;
     } finally {
-      busy(btn, false);
+      loadingGoogle = false;
     }
-  });
+  }
 
   /* ---------- 3 · 내 수업 ---------- */
   async function loadCourses() {

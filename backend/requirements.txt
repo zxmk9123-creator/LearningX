@@ -12,3 +12,4 @@ pydantic>=2,<3
 pytest>=8,<10
 boto3>=1.35,<2
 vercel-queue==0.10.0
+google-auth[requests]>=2,<3

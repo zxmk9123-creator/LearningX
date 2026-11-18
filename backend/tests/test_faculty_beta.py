@@ -1,5 +1,4 @@
-"""Faculty invite, upload queue, real parser, and signed review integration."""
-import hashlib
+"""Faculty sign-in, upload queue, real parser, and signed review integration."""
 import json
 import os
 import secrets
@@ -50,16 +49,26 @@ class FacultyBetaTests(unittest.TestCase):
                 db.flush()
                 faculty_id = faculty.id
                 db.commit()
-            code = secrets.token_urlsafe(32)
-            invites = json.dumps({hashlib.sha256(code.encode()).hexdigest(): faculty_id})
             storage = FakeS3()
             store = private_store.PrivateArtifactStore(client=storage)
-            with patch.dict(os.environ, {"NIT_BETA_FACULTY_INVITES": invites}), patch.object(
+            origin = "https://learning-x-one.vercel.app"
+            config = {
+                "NIT_GOOGLE_CLIENT_ID": "test.apps.googleusercontent.com",
+                "NIT_GOOGLE_FACULTY_ACCOUNTS": json.dumps({"verified-subject": faculty_id}),
+                "NIT_CORS_ORIGINS": origin,
+            }
+            with patch.dict(os.environ, config), patch.object(
                 private_store, "PrivateArtifactStore", return_value=store
-            ):
-                endpoint = "/v1/beta/faculty/session"
-                assert client.post(endpoint, json={"code": secrets.token_urlsafe(32)}).status_code == 401
-                session = client.post(endpoint, json={"code": code})
+            ), patch("learningx.faculty_login.verify_google") as verify:
+                endpoint = "/v1/faculty/auth/google"
+                login_payload = {"credential": "test-google-token"}
+                assert client.post(endpoint, json=login_payload).status_code == 403
+                verify.assert_not_called()
+                verify.return_value = {"sub": "unregistered-subject"}
+                assert client.post(endpoint, json=login_payload, headers={"Origin": origin}).status_code == 403
+                verify.return_value = {"sub": "verified-subject"}
+                session = client.post(endpoint, json=login_payload, headers={"Origin": origin})
+                assert client.post("/v1/beta/faculty/session", json={}).status_code == 404
                 assert session.status_code == 200, session.text
                 assert session.headers["Cache-Control"] == "no-store"
                 headers = {"Authorization": "Bearer " + session.json()["access_token"]}
