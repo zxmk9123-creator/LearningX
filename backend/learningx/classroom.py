@@ -585,12 +585,24 @@ def unhide(row_id: str, db: Session = Depends(session), user: User = Depends(act
     return {"id": row.id, "hidden": False}
 
 
+class ProjectQuestions(BaseModel):
+    displayed_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
 @router.post("/session-questions/{row_id}/project")
-def project(row_id: str, db: Session = Depends(session), user: User = Depends(actor)):
+def project(row_id: str, data: ProjectQuestions | None = None, db: Session = Depends(session),
+            user: User = Depends(actor)):
     row, s = _faculty_row(db, row_id, user)
     if not row.submitted or row.hidden:
         raise HTTPException(409, "Only visible submitted questions can be projected")
-    row.projected_at = row.projected_at or now()
+    stamp = now()
+    row.projected_at = row.projected_at or stamp
+    if data and data.displayed_ids:
+        (db.query(SessionQuestion)
+         .filter(SessionQuestion.session_id == s.id, SessionQuestion.id.in_(data.displayed_ids),
+                 SessionQuestion.submitted.is_(True), SessionQuestion.hidden.is_(False),
+                 SessionQuestion.projected_at.is_(None))
+         .update({SessionQuestion.projected_at: stamp}, synchronize_session=False))
     s.projected_id = row.id
     db.commit()
     return {"session_id": s.id, "projected": _board_item(db, row)}

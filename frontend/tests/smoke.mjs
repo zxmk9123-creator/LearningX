@@ -226,3 +226,43 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  }
  console.log('OK: live slide skips stale transitions and retries the latest page');
 }
+
+{
+ const source = fs.readFileSync(path.join(root, 'assets/qu-teacher.js'), 'utf8');
+ const nodes = new Map();
+ const $ = id => {
+  if (!nodes.has(id)) nodes.set(id, {});
+  return nodes.get(id);
+ };
+ const state = {live: {items: ['first', 'second', 'third'].map(id => ({id, text:id, level_label:'깊은'}))}};
+ const proj = {hidden:true, classList:{remove(){}}};
+ const writes = [];
+ let release;
+ const blocked = new Promise(resolve => { release = resolve; });
+ const api = async (url, options) => {
+  writes.push({url, ...JSON.parse(JSON.stringify(options))});
+  if (writes.length === 1) await blocked;
+ };
+ const ctx = vm.createContext({state, $, proj, api, setTimeout, performance,
+  openProjector(){proj.hidden = false;}, globalError(message){throw Error(message);}});
+ const start = source.indexOf('  function project(id)');
+ const end = source.indexOf("  $('proj-prev').addEventListener", start);
+ vm.runInContext(source.slice(start, end), ctx);
+ ctx.project('first');
+ assert.equal($('proj-text').textContent, 'first');
+ assert.equal(writes.length, 0, 'initial projection renders before any network request');
+ assert.equal(state.live.prevId, 'third', 'previous wraps to the last question');
+ while (!writes.length) await new Promise(resolve => setTimeout(resolve, 5));
+ ctx.project(state.live.nextId);
+ assert.equal($('proj-text').textContent, 'second');
+ ctx.project(state.live.nextId);
+ assert.equal($('proj-text').textContent, 'third');
+ assert.equal(writes.length, 1, 'a stalled write does not block UI or start an overlapping write');
+ release();
+ await state.live.projectionSync;
+ assert.deepEqual(writes.map(({url, body}) => [url, body.displayed_ids]), [
+  ['/v1/session-questions/first/project', []],
+  ['/v1/session-questions/third/project', ['second']],
+ ]);
+ console.log('OK: question projection renders immediately and persists the latest selection in order');
+}

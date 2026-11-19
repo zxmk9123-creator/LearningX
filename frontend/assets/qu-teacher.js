@@ -12,7 +12,7 @@
     courses: [],          // [{...course, materials, openSession}]
     upload: null,         // {courseId, file, uploadId, timer}
     prepare: null,        // {course, material, candidates, approved}
-    live: null,           // {session, level, timer, seen:Set, projectedId}
+    live: null,           // {session, level, items, seen, timer}
     tick: null,
   };
 
@@ -452,7 +452,7 @@
     openedSession = null;
     if (session.status === 'CLOSED') return go(`end/${sessionId}`);
     const prev = state.live && state.live.session.id === sessionId ? state.live : null;
-    state.live = { session, level: prev ? prev.level : 'all', seen: prev ? prev.seen : null, timer: null };
+    state.live = { session, level: prev ? prev.level : 'all', seen: prev ? prev.seen : null, items: [], timer: null };
     screen('live');
     liveView = window.QU.createLiveView({
       api, session: sessionId, panel: $('teacher-slide'), faculty: true,
@@ -569,42 +569,47 @@
     const b = e.target.closest('button[data-level]');
     if (!b || !state.live) return;
     setFilter(b.dataset.level);
-    refreshBoard();
+    paintBoard(state.live);
   });
 
   async function refreshBoard() {
     const live = state.live;
     if (!live) return;
+    const request = live.boardRequest = (live.boardRequest || 0) + 1;
     let data;
     try {
-      [data, live.session] = await Promise.all([
-        api(`/v1/sessions/${live.session.id}/board?level=${live.level}&include_hidden=true`),
-        api(`/v1/sessions/${live.session.id}`),
-      ]);
+      data = await api(`/v1/sessions/${live.session.id}/board?include_hidden=true`);
     } catch (err) {
-      if (err.status !== 401) globalError(err);
+      if (state.live === live && request === live.boardRequest && err.status !== 401) globalError(err);
       return;
     }
-    globalError(null);
+    if (state.live !== live || request !== live.boardRequest || $('screen-live').hidden) return;
+    live.session = data.session;
     if (live.session.status === 'CLOSED') return go(`end/${live.session.id}`);
+    live.items = data.items;
+    live.boardLoaded = true;
     paintLiveHeader();
-    if (!proj.hidden && !proj.classList.contains('code-mode') && !projecting) refreshProjection(live);
+    if (!proj.hidden && !proj.classList.contains('code-mode')) paintProjected(live);
     for (const k of ['all', 'deep', 'mid', 'shallow']) {
       const n = $('level-filter').querySelector(`[data-count="${k}"]`);
       if (n) n.textContent = String(data.counts[k] || 0);
     }
     $('live-total').textContent = `${data.counts.all || 0}개`;
+    paintBoard(live);
+  }
 
+  function paintBoard(live) {
+    const items = live.level === 'all' ? live.items : live.items.filter(q => q.level === live.level);
     const firstLoad = live.seen === null;
-    live.seen = live.seen || new Set();
+    if (live.boardLoaded) live.seen ??= new Set();
     const board = $('board');
-    if (!data.items.length) {
+    if (!items.length) {
       board.replaceChildren(el('div', { class: 'empty' },
         live.level === 'all' ? '아직 들어온 질문이 없어요. 학생들이 코드로 입장해 질문을 다듬고 보내면 여기에 나타납니다.'
           : `${LEVEL[live.level]} 수준 질문이 아직 없어요.`));
       return;
     }
-    board.replaceChildren(...data.items.map((q) => {
+    board.replaceChildren(...items.map((q) => {
       const isNew = !firstLoad && !live.seen.has(q.id);
       live.seen.add(q.id);
       return questionCard(q, isNew);
@@ -654,7 +659,10 @@
     }
     busy(btn, true, '종료 중…');
     try {
-      const s = await api(`/v1/sessions/${state.live.session.id}/state`, { method: 'PUT', body: { status: 'CLOSED' } });
+      const live = state.live;
+      await live.projectionSync;
+      if (state.live !== live) return;
+      const s = await api(`/v1/sessions/${live.session.id}/state`, { method: 'PUT', body: { status: 'CLOSED' } });
       go(`end/${s.id}`);
     } catch (err) { busy(btn, false); globalError(err); }
   });
@@ -674,39 +682,65 @@
     refreshBoard();
   }
 
-  let projecting = false;
-  async function project(id) {
-    if (projecting || !state.live) return;
-    projecting = true;
-    try {
-      await api(`/v1/session-questions/${id}/project`, { method: 'POST' });
-      const data = await api(`/v1/sessions/${state.live.session.id}/projected`);
-      paintProjected(data);
-      openProjector();
-    } catch (err) { globalError(err); }
-    finally { projecting = false; }
+  function project(id) {
+    const live = state.live;
+    if (!live?.items.some(q => q.id === id && !q.hidden)) return;
+    live.projectorItem = id;
+    paintProjected(live);
+    if (proj.hidden) openProjector();
+    live.pendingProjection ??= new Set();
+    live.pendingProjection.add(id);
+    live.publishProjectionAt = performance.now() + 80;
+    void syncProjection(live);
   }
 
-  async function refreshProjection(live) {
-    const current = live.projectorItem;
-    try {
-      const data = await api(`/v1/sessions/${live.session.id}/projected`);
-      if (state.live === live && !proj.hidden && !proj.classList.contains('code-mode') &&
-          !projecting && current === live.projectorItem) paintProjected(data);
-    } catch (_) { /* Keep the question visible while reconnecting. */ }
+  async function syncProjection(live) {
+    if (live.projectionSync) return live.projectionSync;
+    const publish = async () => {
+      while (live.pendingProjection.size && state.live === live) {
+        const delay = live.publishProjectionAt - performance.now();
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        const id = live.projectorItem;
+        const selectedAt = live.publishProjectionAt;
+        const displayedIds = [...live.pendingProjection].filter(other => other !== id).slice(0, 100);
+        for (const displayedId of [...displayedIds, id]) live.pendingProjection.delete(displayedId);
+        const path = `/v1/session-questions/${id}/project`;
+        const options = { method: 'POST', body: { displayed_ids: displayedIds }, timeout: 8000 };
+        try {
+          await api(path, options).catch(err => {
+            if (state.live !== live || !(err.status === 0 || err.status >= 500)) throw err;
+            if (live.publishProjectionAt !== selectedAt) {
+              for (const displayedId of [...displayedIds, id]) live.pendingProjection.add(displayedId);
+              return;
+            }
+            return api(path, options);
+          });
+        } catch (err) {
+          if (state.live !== live) return;
+          if (live.projectorItem === id) globalError('발표 상태를 저장하지 못했습니다. 질문을 다시 선택해 주세요.');
+        }
+      }
+    };
+    live.projectionSync = publish().finally(() => { live.projectionSync = null; });
+    return live.projectionSync;
   }
 
-  function paintProjected(data) {
+  function paintProjected(live) {
     proj.classList.remove('code-mode');
-    const item = data.item;
-    state.live.projectorItem = item?.id;
+    const items = live.items.filter(q => !q.hidden);
+    const index = items.findIndex(q => q.id === live.projectorItem);
+    const item = items[index];
     $('proj-label').textContent = item ? `${item.level_label} 질문` : '학생 질문';
     $('proj-text').textContent = item ? item.text : '띄울 질문이 없습니다.';
     $('proj-meta').textContent = item && item.original ? `처음 질문: ${item.original}` : '이름 없이 들어온 질문입니다.';
-    state.live.prevId = data.previous_id || null;
-    $('proj-prev').disabled = !state.live.prevId;
-    state.live.nextId = data.next_id || null;
-    $('proj-next').disabled = !data.next_id;
+    const canMove = items.length > 1;
+    live.prevId = canMove ? items[index < 0 ? items.length - 1 : (index + items.length - 1) % items.length].id : null;
+    live.nextId = canMove ? items[(index + 1) % items.length].id : null;
+    $('proj-prev').disabled = !live.prevId;
+    $('proj-next').disabled = !live.nextId;
   }
 
   $('proj-prev').addEventListener('click', () => { if (state.live?.prevId) project(state.live.prevId); });

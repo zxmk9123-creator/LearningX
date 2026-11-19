@@ -295,8 +295,12 @@ class ClassroomTests(unittest.TestCase):
         self.assertEqual(len(deep_only["items"]), 1)
 
         # Project, then hide the other; projected endpoint returns the item.
-        p = self.req("POST", f"/v1/session-questions/{rid}/project", self.tf)
+        p = self.req("POST", f"/v1/session-questions/{rid}/project", self.tf,
+                     json={"displayed_ids": [rid2]})
         self.assertEqual(p.status_code, 200)
+        after_batch = self.req("GET", f"/v1/sessions/{sid}/board", self.tf).json()
+        self.assertEqual(after_batch["session"]["projected_id"], rid)
+        self.assertEqual(after_batch["session"]["questions_projected"], 2)
         pj = self.req("GET", f"/v1/sessions/{sid}/projected", self.tf).json()
         self.assertEqual(pj["item"]["id"], rid)
         self.assertEqual(pj["next_id"], rid2)
