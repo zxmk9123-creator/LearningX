@@ -93,7 +93,7 @@
     }
 
     const width = () => Math.max(1, Math.floor(content.clientWidth || panel.clientWidth || 320));
-    const height = () => Math.floor(document.fullscreenElement === panel ? innerHeight : innerHeight * .75);
+    const height = () => Math.floor(document.fullscreenElement === panel || panel.classList?.contains('live-expanded') ? innerHeight : innerHeight * .75);
 
     const feedback = panel.querySelector('[data-live-feedback]');
     const confusedButton = panel.querySelector('[data-live-confused]');
@@ -448,7 +448,8 @@
     function resize() {
       if (stopped || !slide) return;
       if (deck && selected) display({page: selected, total: deck.doc.numPages});
-      else display(slide);
+      else if (faculty) display(slide);
+      else follow(slide);
     }
 
     if (faculty) {
@@ -505,7 +506,7 @@
       }).catch(() => { if (!stopped) status.textContent = '원본 교안 화면을 불러오지 못했습니다. 수업에 다시 접속해 주세요.'; });
     }
     return {
-      stop, select, page: () => displayed,
+      stop, select, resize, page: () => displayed,
       acknowledge: result => { if (!stopped && (selected === null || selected === result.page)) navigation = result; },
       neighbor: delta => {
         if (!deck) return null;

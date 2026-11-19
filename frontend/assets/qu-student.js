@@ -53,10 +53,52 @@
   }
   let liveView;
   let questionAnchor;
+  const slidePanel = $('student-slide');
+  const expandButton = $('student-slide-expand');
+
+  function expanded() {
+    return document.fullscreenElement === slidePanel || slidePanel.classList.contains('live-expanded');
+  }
+
+  function updateFullscreen() {
+    const active = expanded();
+    const label = active ? '교안 전체화면 종료' : '교안 전체화면';
+    expandButton.setAttribute('aria-label', label);
+    expandButton.title = label;
+    expandButton.setAttribute('aria-pressed', String(active));
+    liveView?.resize();
+  }
+
+  async function collapseSlide() {
+    if (document.fullscreenElement === slidePanel && document.exitFullscreen) {
+      await document.exitFullscreen().catch(() => {});
+    }
+    if (slidePanel.classList.contains('live-expanded')) {
+      slidePanel.classList.remove('live-expanded');
+      updateFullscreen();
+    }
+  }
+
+  expandButton.addEventListener('click', async () => {
+    if (expanded()) return collapseSlide();
+    try {
+      if (slidePanel.requestFullscreen) {
+        await slidePanel.requestFullscreen();
+        return;
+      }
+    } catch (_) { /* Use the viewport on browsers that deny native fullscreen. */ }
+    slidePanel.classList.add('live-expanded');
+    updateFullscreen();
+  });
+  document.addEventListener('fullscreenchange', updateFullscreen);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && slidePanel.classList.contains('live-expanded')) collapseSlide();
+  });
   function stopPoll() {
     liveView?.stop();
     liveView = null;
-    $('student-slide').hidden = true;
+    if (expanded()) collapseSlide();
+    slidePanel.hidden = true;
   }
 
   function setStage(stage) {
