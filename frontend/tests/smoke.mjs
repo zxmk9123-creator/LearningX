@@ -102,6 +102,12 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   if (!children.has(key)) children.set(key,node());
   return children.get(key);
  };
+ const menu = panel.querySelector('[data-live-actions]');
+ const menuClasses = new Set();
+ menu.classList = {add: name => menuClasses.add(name), remove: name => menuClasses.delete(name)};
+ menu.contains = target => target === menu;
+ panel.getBoundingClientRect = () => ({left:0, top:0, width:640, height:480});
+ let textSelection = null;
  const response = {arrayBuffer: async () => new ArrayBuffer(10)};
  const error = status => Object.assign(new Error('fixture HTTP '+status),{status});
  const slide = (page, version, after) => ({page, version, after, total:9, pdf:true});
@@ -149,7 +155,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   render:()=>({promise:Promise.resolve()}),streamTextContent(){}};
  const windowListeners = new Map();
  const htmlClasses = new Set();
- const mockWindow = {QU:{el:node,LEVEL:{}}, scrollX:0, scrollY:120, getSelection:()=>null,
+ const mockWindow = {QU:{el:node,LEVEL:{}}, scrollX:0, scrollY:120, getSelection:()=>textSelection,
   scrollTo(x,y){this.scrollX=x; this.scrollY=y;},
   addEventListener(type,fn){windowListeners.set(type,fn);}, removeEventListener(type){windowListeners.delete(type);}};
  const ctx = vm.createContext({
@@ -219,6 +225,24 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   windowListeners.get('pointerup')(drag);
   await until(()=>view.page()===9,'latest page resumes after selection');
   assert.ok(!htmlClasses.has('live-selecting'));
+  const frame = content.querySelector('.live-pdf');
+  const layer = frame.querySelector('.live-pdf-text');
+  const anchor = {};
+  layer.contains = node => node === anchor;
+  frame.getBoundingClientRect = () => ({left:0,top:0,width:640,height:480});
+  const rect = {left:130,top:90,right:220,bottom:114,width:90,height:24};
+  const range = {startContainer:anchor,endContainer:anchor,getBoundingClientRect:()=>rect,
+   getClientRects:()=>[rect],toString:()=> 'fixture selection'};
+  textSelection = {anchorNode:anchor,isCollapsed:false,rangeCount:1,getRangeAt:()=>({cloneRange:()=>range})};
+  ctx.document.fullscreenElement = panel;
+  content.listeners.get('pointerdown')(drag);
+  windowListeners.get('pointerup')(drag);
+  assert.ok(menuClasses.has('selection-actions'));
+  assert.equal(menu.style.top,'122px');
+  panel.listeners.get('pointerdown')({target:menu});
+  assert.ok(menuClasses.has('selection-actions'),'menu click preserves selected anchor');
+  panel.listeners.get('pointerdown')({target:content});
+  assert.ok(!menuClasses.has('selection-actions'),'outside press dismisses menu');
  } finally {
   releaseOld(response);
   releaseStalled(response);
@@ -248,12 +272,16 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  const start = source.indexOf('  function project(id)');
  const end = source.indexOf("  $('proj-prev').addEventListener", start);
  vm.runInContext(source.slice(start, end), ctx);
+ const started = performance.now();
  ctx.project('first');
+ const firstPaintMs = performance.now() - started;
  assert.equal($('proj-text').textContent, 'first');
  assert.equal(writes.length, 0, 'initial projection renders before any network request');
  assert.equal(state.live.prevId, 'third', 'previous wraps to the last question');
  while (!writes.length) await new Promise(resolve => setTimeout(resolve, 5));
+ const nextStarted = performance.now();
  ctx.project(state.live.nextId);
+ const nextPaintMs = performance.now() - nextStarted;
  assert.equal($('proj-text').textContent, 'second');
  ctx.project(state.live.nextId);
  assert.equal($('proj-text').textContent, 'third');
@@ -264,5 +292,6 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   ['/v1/session-questions/first/project', []],
   ['/v1/session-questions/third/project', ['second']],
  ]);
- console.log('OK: question projection renders immediately and persists the latest selection in order');
+ console.log('OK: question projection renders immediately and persists the latest selection in order',
+  {firstUpdateMs: firstPaintMs.toFixed(2), nextUpdateMs: nextPaintMs.toFixed(2)});
 }

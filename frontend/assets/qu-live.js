@@ -95,6 +95,7 @@
     const width = () => Math.max(1, Math.floor(content.clientWidth || panel.clientWidth || 320));
     const height = () => Math.floor(document.fullscreenElement === panel || panel.classList?.contains('live-expanded') ? innerHeight : innerHeight * .75);
 
+    const actions = panel.querySelector('[data-live-actions]');
     const feedback = panel.querySelector('[data-live-feedback]');
     const confusedButton = panel.querySelector('[data-live-confused]');
     const askButton = panel.querySelector('[data-live-ask]');
@@ -106,6 +107,22 @@
     let open = initial?.status === 'OPEN';
     let sendingConfusion = false;
     let drag;
+
+    function hideSelectionActions(event) {
+      if (!event || !actions?.contains(event.target)) actions?.classList.remove('selection-actions');
+    }
+
+    function showSelectionActions(hit) {
+      if (!actions || !open || !picked.quote || !picked.rects.length ||
+          (document.fullscreenElement !== panel && !panel.classList.contains('live-expanded'))) return;
+      const bounds = panel.getBoundingClientRect();
+      const anchorX = Math.max(8, Math.min(hit.left - bounds.left, bounds.width - 228));
+      const below = hit.bottom - bounds.top + 8;
+      const anchorY = below + 136 < bounds.height ? below : Math.max(8, hit.top - bounds.top - 136);
+      actions.style.left = anchorX + 'px';
+      actions.style.top = anchorY + 'px';
+      actions.classList.add('selection-actions');
+    }
 
     function beginDrag(event) {
       if (drag || event.pointerType !== 'mouse' || event.button !== 0 ||
@@ -167,6 +184,7 @@
         y: clamp((hit.top + hit.height / 2 - area.top) / area.height),
         quote: range.toString().trim().slice(0, 240)};
       if (feedback) feedback.textContent = picked.quote ? '선택: “' + picked.quote + '”' : '';
+      showSelectionActions(hit);
       paintIndex();
     }
 
@@ -210,6 +228,7 @@
     const updateSelection = () => { if (!drag) pickText(); };
     if (!faculty) {
       document.addEventListener('selectionchange', updateSelection);
+      panel.addEventListener('pointerdown', hideSelectionActions);
       content.addEventListener('click', pickPoint);
       content.addEventListener('pointerdown', beginDrag);
       window.addEventListener('pointerup', finishDrag);
@@ -385,6 +404,7 @@
       frame ??= el('p', {class: 'live-slide-text', text: target.text || '교안 화면을 준비하는 중입니다.'});
       if (displayed !== target.page) {
         picked = null;
+        hideSelectionActions();
         if (feedback) feedback.textContent = '';
       }
       displayed = target.page;
@@ -426,6 +446,7 @@
         indexVersion = data.index_version;
         if (data.index) items = data.index;
         open = data.status === 'OPEN';
+        if (!open) hideSelectionActions();
         confusion = data.confusion;
         if (changed && (selected === null || data.status === 'CLOSED')) {
           retryCount = 0;
@@ -461,6 +482,8 @@
       stopped = true;
       clearTimeout(timer);
       clearTimeout(retryTimer);
+      hideSelectionActions();
+      panel.removeEventListener('pointerdown', hideSelectionActions);
       document.removeEventListener('selectionchange', updateSelection);
       content.removeEventListener('click', pickPoint);
       content.removeEventListener('pointerdown', beginDrag);

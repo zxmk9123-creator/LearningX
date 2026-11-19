@@ -324,7 +324,7 @@ html.live-selecting {overflow: hidden; overflow-anchor: none;}
 }
 #student-slide.live-expanded {position:fixed; inset:0; z-index:40;}
 html:has(#student-slide.live-expanded) {overflow:hidden;}
-#student-slide:is(:fullscreen, .live-expanded) > :not(.live-slide-layout, .live-expand-button),
+#student-slide:is(:fullscreen, .live-expanded) > :not(.live-slide-layout, .live-expand-button, .selection-actions),
 #student-slide:is(:fullscreen, .live-expanded) [data-live-index] {display:none;}
 #student-slide:is(:fullscreen, .live-expanded) .live-slide-layout {
   grid-template-columns:minmax(0,1fr); height:100%;
@@ -333,3 +333,25 @@ html:has(#student-slide.live-expanded) {overflow:hidden;}
   display:grid; place-items:center; min-height:0; min-width:0;
 }
 #student-slide:is(:fullscreen, .live-expanded) .live-pdf {background:white;}
+
+
+#student-slide:is(:fullscreen, .live-expanded) .selection-actions {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  width: min(220px, calc(100% - 16px));
+  gap: .25rem;
+  padding: .4rem;
+  margin: 0;
+  border: 1px solid #dfe4e1;
+  border-radius: .65rem;
+  background: #fff;
+  box-shadow: 0 8px 24px #0004;
+}
+#student-slide:is(:fullscreen, .live-expanded) .selection-actions .btn {
+  text-align: start;
+  min-height: 36px;
+}
+#student-slide:is(:fullscreen, .live-expanded) .selection-actions [data-live-feedback] {
+  font-size: .75rem;
+}

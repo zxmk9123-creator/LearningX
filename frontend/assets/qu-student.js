@@ -65,6 +65,7 @@
     const label = active ? '교안 전체화면 종료' : '교안 전체화면';
     expandButton.setAttribute('aria-label', label);
     expandButton.title = label;
+    if (!active) slidePanel.querySelector('[data-live-actions]').classList.remove('selection-actions');
     expandButton.setAttribute('aria-pressed', String(active));
     liveView?.resize();
   }
@@ -169,8 +170,22 @@
       onAnchor: ({page, anchor}) => {
         if (st.current || st.sending) return false;
         questionAnchor = {page, anchor};
-        $('q-input').focus();
-        $('q-input').placeholder = anchor?.quote ? '“' + anchor.quote + '”에 관해 질문하세요' : page + '쪽에 관해 질문하세요';
+        const input = $('q-input');
+        input.placeholder = anchor?.quote ? '“' + anchor.quote + '”에 관해 질문하세요' : page + '쪽에 관해 질문하세요';
+        if (expanded()) {
+          const session = st.session;
+          collapseSlide().then(() => {
+            if (st.session !== session || $('screen-coach').hidden) return;
+            const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (!reduced) $('composer').animate(
+              [{opacity: .55, transform: 'translateY(12px)'}, {opacity: 1, transform: 'translateY(0)'}],
+              {duration: 220, easing: 'ease-out'});
+            input.focus({preventScroll: true});
+            input.scrollIntoView({behavior: reduced ? 'instant' : 'smooth', block: 'nearest'});
+          });
+        } else {
+          input.focus();
+        }
         return true;
       },
       onState: ({status}) => {
