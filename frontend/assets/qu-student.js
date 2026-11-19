@@ -175,13 +175,16 @@
         if (expanded()) {
           const session = st.session;
           collapseSlide().then(() => {
-            if (st.session !== session || $('screen-coach').hidden) return;
-            const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-            if (!reduced) $('composer').animate(
-              [{opacity: .55, transform: 'translateY(12px)'}, {opacity: 1, transform: 'translateY(0)'}],
-              {duration: 220, easing: 'ease-out'});
-            input.focus({preventScroll: true});
-            input.scrollIntoView({behavior: reduced ? 'instant' : 'smooth', block: 'nearest'});
+            // Wait for the fullscreen layout to clear before measuring the chat's position.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const coach = $('screen-coach');
+              if (st.session !== session || coach.hidden) return;
+              if (matchMedia('(pointer: fine)').matches) input.focus({preventScroll: true});
+              coach.scrollIntoView({
+                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+                block: 'start',
+              });
+            }));
           });
         } else {
           input.focus();
