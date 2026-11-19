@@ -409,9 +409,10 @@ def _snapshot(db, session_id, user, version, cursor=None):
         query = query.filter(SessionQuestion.submitted.is_(True), SessionQuestion.hidden.is_(False))
     else:
         query = query.filter(SessionQuestion.student_id == user.id)
+    order_time = SessionQuestion.submitted_at if faculty else SessionQuestion.created_at
     index = [{"id": row.id, "level": row.level, "page": row.page, "text": row.latest_text,
               "anchor": json.loads(row.location) if row.location else None}
-             for row in query.order_by(SessionQuestion.created_at.desc()).limit(500)]
+             for row in query.order_by(order_time, SessionQuestion.id).limit(500)]
     confusion = None
     if slide:
         votes = db.query(SlideConfusion).filter_by(session_id=session_id, page=slide.page)
@@ -541,7 +542,7 @@ def board(session_id: str, level: Literal["all", "shallow", "mid", "deep"] = "al
           include_hidden: bool = False, db: Session = Depends(session), user: User = Depends(actor)):
     s = _faculty_session(db, session_id, user)
     q = db.query(SessionQuestion).filter_by(session_id=s.id, submitted=True)
-    rows = q.order_by(SessionQuestion.submitted_at.desc()).all()
+    rows = q.order_by(SessionQuestion.submitted_at, SessionQuestion.id).all()
     counts = {"all": 0, "shallow": 0, "mid": 0, "deep": 0}
     items = []
     for r in rows:
@@ -552,8 +553,6 @@ def board(session_id: str, level: Literal["all", "shallow", "mid", "deep"] = "al
             counts[r.level] += 1
         if level == "all" or r.level == level:
             items.append(_board_item(db, r))
-    order = {"deep": 0, "mid": 1, "shallow": 2}
-    items.sort(key=lambda x: (order[x["level"]], -(datetime.fromisoformat(x["submitted_at"]).timestamp())))
     return {"session": _public_session(db, s, faculty=True), "counts": counts, "items": items}
 
 
@@ -601,17 +600,19 @@ def project(row_id: str, db: Session = Depends(session), user: User = Depends(ac
 def projected(session_id: str, db: Session = Depends(session), user: User = Depends(actor)):
     s = _faculty_session(db, session_id, user)
     row = db.get(SessionQuestion, s.projected_id) if s.projected_id else None
-    nxt = None
+    previous = nxt = None
     if row:
-        remaining = (db.query(SessionQuestion)
-                     .filter(SessionQuestion.session_id == s.id, SessionQuestion.submitted.is_(True),
-                             SessionQuestion.hidden.is_(False), SessionQuestion.projected_at.is_(None))
-                     .all())
-        order = {"deep": 0, "mid": 1, "shallow": 2}
-        remaining.sort(key=lambda r: (order[r.level], _iso(r.submitted_at) or ""))
-        nxt = remaining[0].id if remaining else None
+        visible = (db.query(SessionQuestion.id)
+                   .filter(SessionQuestion.session_id == s.id, SessionQuestion.submitted.is_(True),
+                           SessionQuestion.hidden.is_(False))
+                   .order_by(SessionQuestion.submitted_at, SessionQuestion.id).all())
+        ids = [item.id for item in visible]
+        if len(ids) > 1 and row.id in ids:
+            current = ids.index(row.id)
+            previous = ids[(current - 1) % len(ids)]
+            nxt = ids[(current + 1) % len(ids)]
     return {"session": _public_session(db, s, faculty=True),
-            "item": _board_item(db, row) if row else None, "next_id": nxt}
+            "item": _board_item(db, row) if row else None, "previous_id": previous, "next_id": nxt}
 
 
 def _csv_cell(text):

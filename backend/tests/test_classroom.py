@@ -269,20 +269,23 @@ class ClassroomTests(unittest.TestCase):
         # Unsubmitted questions are invisible on the board.
         b = self.req("GET", f"/v1/sessions/{sid}/board", self.tf).json()
         self.assertEqual(b["items"], [])
-        s = self.req("POST", f"/v1/session-questions/{rid}/submit", ts)
-        self.assertEqual(s.status_code, 200)
-        # Submitted questions cannot be revised.
-        self.assertEqual(self.req("POST", f"/v1/session-questions/{rid}/revisions", ts, json={"text": "다른 질문으로 바꿔 볼게요"}).status_code, 409)
+
 
         with patch.object(nit, "coach_question", return_value=coaching("clarify")):
             a2 = self.req("POST", f"/v1/sessions/{sid}/questions", ts2, json={"question": "채플힐 연구는 언제 했나요?"})
         rid2 = a2.json()["id"]
         self.req("POST", f"/v1/session-questions/{rid2}/submit", ts2)
+        s = self.req("POST", f"/v1/session-questions/{rid}/submit", ts)
+        self.assertEqual(s.status_code, 200)
+        # Submitted questions cannot be revised.
+        self.assertEqual(self.req("POST", f"/v1/session-questions/{rid}/revisions", ts, json={"text": "다른 질문으로 바꿔 볼게요"}).status_code, 409)
 
         b = self.req("GET", f"/v1/sessions/{sid}/board", self.tf).json()
         self.assertEqual(b["counts"], {"all": 2, "shallow": 1, "mid": 0, "deep": 1})
-        self.assertEqual(b["items"][0]["level"], "deep")
-        self.assertIsNotNone(b["items"][0]["original"])
+        self.assertEqual([item["id"] for item in b["items"]], [rid2, rid])
+        index = self.req("GET", f"/v1/sessions/{sid}/live", self.tf).json()["index"]
+        self.assertEqual([item["id"] for item in index], [rid2, rid])
+        self.assertIsNotNone(b["items"][1]["original"])
         flat = str(b)
         self.assertNotIn("anon+", flat)
         self.assertNotIn("student", flat.lower().replace("students", ""))
@@ -297,6 +300,11 @@ class ClassroomTests(unittest.TestCase):
         pj = self.req("GET", f"/v1/sessions/{sid}/projected", self.tf).json()
         self.assertEqual(pj["item"]["id"], rid)
         self.assertEqual(pj["next_id"], rid2)
+        self.assertEqual(pj["previous_id"], rid2)
+        self.req("POST", f"/v1/session-questions/{rid2}/project", self.tf)
+        back = self.req("GET", f"/v1/sessions/{sid}/projected", self.tf).json()
+        self.assertEqual((back["previous_id"], back["next_id"]), (rid, rid))
+        self.req("POST", f"/v1/session-questions/{rid}/project", self.tf)
         self.req("POST", f"/v1/session-questions/{rid2}/hide", self.tf)
         b = self.req("GET", f"/v1/sessions/{sid}/board", self.tf).json()
         self.assertEqual(b["counts"]["all"], 1)

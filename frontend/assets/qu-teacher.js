@@ -588,7 +588,7 @@
     globalError(null);
     if (live.session.status === 'CLOSED') return go(`end/${live.session.id}`);
     paintLiveHeader();
-    const visible = data.items.filter((x) => !x.hidden);
+    if (!proj.hidden && !proj.classList.contains('code-mode') && !projecting) refreshProjection(live);
     for (const k of ['all', 'deep', 'mid', 'shallow']) {
       const n = $('level-filter').querySelector(`[data-count="${k}"]`);
       if (n) n.textContent = String(data.counts[k] || 0);
@@ -604,9 +604,7 @@
           : `${LEVEL[live.level]} 수준 질문이 아직 없어요.`));
       return;
     }
-    // Keep hidden ones at the end, faded, so they can be restored.
-    const ordered = [...visible, ...data.items.filter((x) => x.hidden)];
-    board.replaceChildren(...ordered.map((q) => {
+    board.replaceChildren(...data.items.map((q) => {
       const isNew = !firstLoad && !live.seen.has(q.id);
       live.seen.add(q.id);
       return questionCard(q, isNew);
@@ -676,39 +674,60 @@
     refreshBoard();
   }
 
+  let projecting = false;
   async function project(id) {
+    if (projecting || !state.live) return;
+    projecting = true;
     try {
       await api(`/v1/session-questions/${id}/project`, { method: 'POST' });
       const data = await api(`/v1/sessions/${state.live.session.id}/projected`);
       paintProjected(data);
       openProjector();
     } catch (err) { globalError(err); }
+    finally { projecting = false; }
+  }
+
+  async function refreshProjection(live) {
+    const current = live.projectorItem;
+    try {
+      const data = await api(`/v1/sessions/${live.session.id}/projected`);
+      if (state.live === live && !proj.hidden && !proj.classList.contains('code-mode') &&
+          !projecting && current === live.projectorItem) paintProjected(data);
+    } catch (_) { /* Keep the question visible while reconnecting. */ }
   }
 
   function paintProjected(data) {
     proj.classList.remove('code-mode');
     const item = data.item;
+    state.live.projectorItem = item?.id;
     $('proj-label').textContent = item ? `${item.level_label} 질문` : '학생 질문';
     $('proj-text').textContent = item ? item.text : '띄울 질문이 없습니다.';
     $('proj-meta').textContent = item && item.original ? `처음 질문: ${item.original}` : '이름 없이 들어온 질문입니다.';
+    state.live.prevId = data.previous_id || null;
+    $('proj-prev').disabled = !state.live.prevId;
     state.live.nextId = data.next_id || null;
     $('proj-next').disabled = !data.next_id;
   }
 
-  $('proj-next').addEventListener('click', () => { if (state.live.nextId) project(state.live.nextId); });
+  $('proj-prev').addEventListener('click', () => { if (state.live?.prevId) project(state.live.prevId); });
+  $('proj-next').addEventListener('click', () => { if (state.live?.nextId) project(state.live.nextId); });
   $('proj-close').addEventListener('click', closeProjector);
   $('code-full').addEventListener('click', () => {
     proj.classList.add('code-mode');
     $('proj-label').textContent = '입장 코드';
     $('proj-text').textContent = state.live.session.join_code || '';
     $('proj-meta').textContent = `${location.host}${location.pathname.replace(/teacher\.html$/, '')} 에서 입력하세요`;
+    $('proj-prev').disabled = true;
     $('proj-next').disabled = true;
     openProjector();
   });
   document.addEventListener('keydown', (e) => {
     if (proj.hidden) return;
-    if (e.key === 'Escape') closeProjector();
-    if ((e.key === 'ArrowRight' || e.key === ' ') && state.live && state.live.nextId) { e.preventDefault(); project(state.live.nextId); }
+    if (e.key === 'Escape') return closeProjector();
+    if (proj.classList.contains('code-mode') || !state.live) return;
+    const id = e.key === 'ArrowLeft' ? state.live.prevId
+      : (e.key === 'ArrowRight' || (e.key === ' ' && !e.target.closest('button'))) ? state.live.nextId : null;
+    if (id) { e.preventDefault(); project(id); }
   });
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !proj.hidden) closeProjector(); });
 
