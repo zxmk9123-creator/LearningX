@@ -379,6 +379,12 @@ html.live-view-expanded {overflow:hidden;}
 .live-tab.unassessed {background: #f2f6f3; color: #4a5a53; box-shadow: inset 0 0 0 1px #cdd6d1;}
 .live-mark.unassessed {background: #8a9891;}
 .live-highlight-group.unassessed {color:#8a9891;}
+.stu .lv.unassessed {height:auto;padding:0;background:none;box-shadow:none;color:inherit;font:inherit;}
+#student-slide .live-tab.unassessed {background:none;color:inherit;box-shadow:none;}
+#student-slide .live-mark.unassessed {background:var(--surface);border-color:#555;color:#333;}
+#student-slide .live-highlight-group.unassessed {color:#555;opacity:.7;}
+#student-slide .live-highlight.unassessed {background:none;border:1px dashed currentColor;}
+
 /* Unit learning objective step (step 2). Selected values carry text and position, not color alone. */
 .objective-screen{max-width:880px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 .objective-status:empty{display:none}
