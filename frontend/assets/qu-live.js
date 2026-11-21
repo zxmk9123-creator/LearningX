@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const {el, LEVEL, liveMark, liveTimingEnabled} = window.QU;
+  const {el, LEVEL, liveMark, liveTimingEnabled, liveProtocol} = window.QU;
   const pdfBase = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/';
   let pdfLibrary;
   let pdfWorker;
@@ -479,15 +479,8 @@
     }
 
     async function readLiveUpdate(response) {
-      if (!response.headers.get('Content-Type')?.startsWith('application/vnd.question-up.live-page')) {
-        return response.json();
-      }
-      const buffer = await response.arrayBuffer();
-      const length = new DataView(buffer).getUint32(0);
-      const end = 4 + length;
-      if (end >= buffer.byteLength) throw new Error('Incomplete live page response');
-      const data = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, length)));
-      return {...data, inlinePdf: buffer.slice(end)};
+      if (!liveProtocol.isLivePage(response.headers.get('Content-Type'))) return response.json();
+      return liveProtocol.decodeLiveFrame(await response.arrayBuffer());
     }
 
     let tryInlinePage = !faculty;
@@ -497,18 +490,12 @@
       try {
         const fresh = refreshNow;
         refreshNow = false;
-        const params = new URLSearchParams({version: slide?.version || ''});
-        if (stamp !== undefined && !fresh) params.set('after', stamp);
-        if (indexVersion) params.set('index_version', indexVersion);
-        if (tryInlinePage) {
-          params.set('inline_page', 'true');
-          params.set('partial_page', 'true');
-        }
+        const query = liveProtocol.pollQuery({version: slide?.version, stamp, indexVersion, inline: tryInlinePage, fresh});
         let serverTiming;
         const controller = new AbortController();
         pollController = controller;
-        pollParked = params.has('after');
-        const data = await api(path + '?' + params, {
+        pollParked = new URLSearchParams(query).has('after');
+        const data = await api(path + '?' + query, {
           timeout: 6000,
           signal: controller.signal,
           readBody: faculty ? undefined : readLiveUpdate,
@@ -516,11 +503,12 @@
         });
         if (stopped) return;
         tryInlinePage = !faculty;
-        stamp = data.partial ? undefined : data.revision;
-        if (!data.partial && stamp === undefined) delay = 2000;
-        if (data.slide && (data.slide.sequence ?? 0) < (slide?.sequence ?? 0)) return;
-        if (data.slide && (data.slide.sequence ?? 0) >= (confirmed?.sequence ?? 0)) confirmed = data.slide;
-        const changed = slide?.version !== data.slide?.version;
+        const update = liveProtocol.applyUpdate({slide, confirmed}, data);
+        stamp = update.stamp;
+        delay = update.delay;
+        if (update.stale) return;
+        confirmed = update.confirmed;
+        const changed = update.changed;
         if (changed) {
           if (!faculty) {
             frames.clear();
@@ -644,7 +632,7 @@
       stop, select, resize, page: () => displayed,
       confirmedVersion: () => confirmed?.version,
       acknowledge: result => {
-        if (stopped || (result.sequence ?? 0) < (confirmed?.sequence ?? 0)) return;
+        if (stopped || !liveProtocol.acceptsAcknowledgement(confirmed, result)) return;
         if (result.version) confirmed = result;
         if (selected === null || selected === result.page) navigation = result;
       },
@@ -652,10 +640,7 @@
         if (!deck) return null;
         const current = selected ?? slide?.page ?? displayed;
         if (current === null) return null;
-        if (visiblePages.length) return visiblePages[visiblePages.indexOf(current) + delta];
-        if (navigation?.page === current && navigation.pdf) return delta < 0 ? navigation.before : navigation.after;
-        const next = current + delta;
-        return next >= 1 && next <= deck.doc.numPages ? next : null;
+        return liveProtocol.neighborPage({visiblePages, navigation, current, delta, pageCount: deck.doc.numPages});
       },
       target: () => selected ?? slide?.page ?? displayed,
       total: () => deck?.doc.numPages ?? slide?.total,
