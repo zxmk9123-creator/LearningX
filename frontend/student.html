@@ -56,13 +56,19 @@
     <main class="thread" id="thread" aria-live="polite"></main>
   </div>
   <section id="question-selection" class="card question-selection" aria-labelledby="question-selection-title" hidden>
-    <div class="row between">
-      <strong id="question-selection-title">교수자에게 보낼 질문</strong>
-      <button class="btn sm" type="button" id="question-new">새 질문 쓰기</button>
-    </div>
-    <div class="stack" id="question-options"></div>
-    <button class="btn primary" type="button" id="question-batch-send" disabled>선택한 질문 보내기</button>
-    <p class="muted" id="question-batch-status" role="status"></p>
+    <details id="question-disclosure">
+      <summary>
+        <strong id="question-selection-title">교수자에게 보낼 질문</strong>
+        <span id="question-count" class="muted"></span>
+        <span class="question-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="stack" id="question-options"></div>
+      <div class="row">
+        <button class="btn primary" type="button" id="question-batch-send" disabled>선택한 질문 보내기</button>
+        <button class="btn sm" type="button" id="question-new">새 질문 쓰기</button>
+      </div>
+      <p class="muted" id="question-batch-status" role="status"></p>
+    </details>
   </section>
   <div class="composer-wrap">
     <form class="composer" id="composer" novalidate>

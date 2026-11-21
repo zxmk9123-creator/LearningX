@@ -89,7 +89,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.equal(levelText('deep'), '깊은 질문');
  assert.match(teacher, /data-level="unassessed"[^>]*>판정 보류 <span data-count="unassessed">/);
  assert.ok(quTeacher.includes("['all', 'deep', 'mid', 'shallow', 'unassessed']"), 'teacher paints the unassessed count');
- const start = quStudent.indexOf('  function renderCoaching(level, c) {');
+ const start = quStudent.indexOf('  function renderCoaching(');
  const end = quStudent.indexOf('\n  function ', start + 10);
  const stages = [];
  const messages = [];
@@ -629,7 +629,11 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  const boxes = () => $('question-options').kids.map(card => card.kids[0].kids[0]);
  assert.deepEqual(Array.from(boxes(), box => box.disabled), [false, false, true, true]);
  for (const box of boxes().slice(0,2)) box.attrs.onchange({target:{checked:true}});
- assert.match($('question-batch-send').textContent, /2개/);
+ assert.equal($('question-batch-send').textContent, '선택한 질문 보내기');
+ const firstEdit = $('question-options').kids[0].kids[2].kids[0];
+ firstEdit.attrs.onclick();
+ assert.match($('question-batch-status').textContent, /다듬기는 한 번에 하나만/);
+ assert.equal(ctx.st.current, undefined, 'selecting multiple questions aborts editing');
  await $('question-batch-send').click();
  await $('question-batch-send').click();
  assert.equal(requests[0].path, '/v1/sessions/class/questions/submit-batch');
@@ -638,4 +642,52 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.deepEqual(Array.from(boxes(), box => box.attrs.id), ['pick-c','pick-d']);
  assert.equal(ctx.st.sentCount, 2);
  console.log('OK: eligible drafts submit together, blocked drafts stay disabled, and network retries retain the batch ID');
+}
+
+{
+ const card = student.match(/<details id="question-disclosure"[^>]*>/)?.[0];
+ assert.ok(card && !/\bopen\b/.test(card), 'draft card starts collapsed');
+
+ const nodes = new Map();
+ const $ = id => {
+  if (!nodes.has(id)) nodes.set(id, {
+   value: '', style: {}, addEventListener(event, handler) { this[event] = handler; },
+  });
+  return nodes.get(id);
+ };
+ const requests = [];
+ const drafts = new Map();
+ const ctx = vm.createContext({
+  $, drafts, token: 'test', st: {session: {id: 'class'}}, questionAnchor: null,
+  liveView: null, pendingAsk: null, draftRead: 0, batchSupported: true, selected: new Map(),
+  crypto: {randomUUID: () => String(requests.length)}, updateComposer(){}, paintDrafts(){},
+  meMsg(){}, scrollThread(){}, renderCoaching(){}, scheduleDraftPoll(){}, coachMsg(){}, WARNINGS: {},
+  el: () => ({remove(){}}),
+  api: async (url, options) => {
+   requests.push({url, options});
+   const id = url.includes('/revisions') ? 'q1' : 'q' + requests.length;
+   return {id, level: 'mid', revision_id: 'rev' + requests.length, suitability: {status: 'eligible'}};
+  },
+ });
+ $('thread').append = () => {};
+ const start = quStudent.indexOf("  $('composer').addEventListener('submit'");
+ const end = quStudent.indexOf('  function renderCoaching(', start);
+ vm.runInContext(quStudent.slice(start, end), ctx);
+ const submit = async text => {
+  $('q-input').value = text;
+  await $('composer').submit({preventDefault(){}});
+ };
+ await submit('처음 작성한 질문입니다.');
+ await submit('두 번째 질문도 저장합니다.');
+ assert.deepEqual(requests.map(({url}) => url), [
+  '/v1/sessions/class/questions', '/v1/sessions/class/questions',
+ ]);
+ assert.deepEqual([...drafts.keys()], ['q1', 'q2']);
+ ctx.st.current = {...drafts.get('q1')};
+ await submit('첫 번째 질문을 더 구체적으로 썼습니다.');
+ assert.equal(requests[2].url, '/v1/session-questions/q1/revisions');
+ assert.deepEqual([...drafts.keys()], ['q1', 'q2'], 'editing keeps the original position');
+ assert.equal(drafts.get('q2').text, '두 번째 질문도 저장합니다.');
+ assert.equal(ctx.st.current, null, 'the next entry starts a new draft after a revision');
+ console.log('OK: the card starts collapsed, new questions accumulate, and a revision changes only one draft');
 }

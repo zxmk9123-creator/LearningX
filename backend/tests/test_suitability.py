@@ -145,6 +145,31 @@ class SuitabilityTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(fit.rule_reasons(text), [], "polite objection, quotation, anonymised experience")
 
+    def test_rules_catch_obfuscated_identifiers_direct_abuse_and_spam(self):
+        cases = {
+            "제 번호는 ０１０-１２３４-５６７８입니다": ["personal_or_private"],
+            "메일 me@exam\u200bple.com 으로 보내 주세요": ["personal_or_private"],
+            "선생님 집 주소 알려주세요": ["personal_or_private"],
+            "교수님은 진짜 멍청하네": ["targeted_attack"],
+            "저희 채널을 구독해 주세요": ["disruption"],
+            "ㅋㅋㅋㅋㅋㅋ": ["disruption"],
+            "교안에서 '교수님은 바보야'라는 발화는 어떤 오류인가요?": [],
+            "교수님 설명이 틀렸다고 생각하는데 다시 설명해 주실 수 있나요?": [],
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(fit.rule_reasons(text), expected)
+
+    def test_batch_enforces_suitability_even_with_legacy_guard_off(self):
+        token = self.student()
+        bad = self.ask(token, "교수님은 진짜 멍청하네")
+        good = self.ask(token)
+        self.assertEqual(bad["suitability"]["primary_reason"], "targeted_attack")
+        self.assertEqual(self.batch(token, [good, bad]).status_code, 409)
+        self.assertEqual(self.board_texts(), [])
+        self.assertEqual(self.batch(token, [good]).status_code, 200)
+        self.assertFalse(self.mine(token)[bad["id"]]["submitted"])
+
     def test_repeated_identical_text_is_disruption_but_revisions_are_not(self):
         token = self.student()
         first = self.ask(token, "평균은 왜 움직이나요?")

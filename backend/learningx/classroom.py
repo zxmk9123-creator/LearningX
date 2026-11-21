@@ -1348,11 +1348,10 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
 def recheck_suitability(row_id: str, data: SuitabilityRecheck, background_tasks: BackgroundTasks,
                         db: Session = Depends(session), user: User = Depends(actor)):
     row, s = _own_row(db, row_id, user)
-    if s.status != "OPEN":
-        raise HTTPException(423, "The class is not taking questions right now")
+    _lock_open(db, s)
+    db.refresh(row, with_for_update=True)
     if row.submitted:
         raise HTTPException(409, {"code": "already_submitted"})
-    db.refresh(row, with_for_update=True)
     head, check = fit.ensure_head(db, row, fit.fix_policy(db, s.id))
     if head.revision_id != data.revision_id:
         db.rollback()
@@ -1369,7 +1368,7 @@ def recheck_suitability(row_id: str, data: SuitabilityRecheck, background_tasks:
     return {"id": row.id, "revision_id": head.revision_id, "suitability": fit.public(check)}
 
 
-def _submit_problem(db, row, revision_id, policy):
+def _submit_problem(db, row, revision_id, policy, *, require_eligible):
     """Why a row cannot be sent now, or None. Client-sent state is never trusted."""
     if row.submitted:
         return "already_submitted"
@@ -1377,10 +1376,10 @@ def _submit_problem(db, row, revision_id, policy):
     if head is None:  # written before checks existed and never checked
         if revision_id not in (None, fit.legacy_revision(row.id)):
             return "stale_revision"
-        return "check_pending" if fit.enforced() else None
+        return "check_pending" if require_eligible else None
     if revision_id is not None and head.revision_id != revision_id:
         return "stale_revision"
-    if not fit.enforced():
+    if not require_eligible:
         return None
     if check is None or check.status == "pending":
         return "check_pending"
@@ -1407,9 +1406,9 @@ def session_submit(row_id: str, data: SingleSubmit | None = None,
     db.refresh(row, with_for_update=True)
     if not row.submitted:
         revision_id = data.revision_id if data else None
-        problem = _submit_problem(db, row, revision_id, fit.fix_policy(db, s.id))
-        # Gate off: the previous single submit (a pre-feature question has no draft version yet).
-        if problem and (fit.enforced() or problem == "stale_revision"):
+        problem = _submit_problem(db, row, revision_id, fit.fix_policy(db, s.id),
+                                  require_eligible=fit.enforced())
+        if problem:
             db.rollback()
             raise HTTPException(409, {"code": problem})
         _mark_submitted(db, s, user, row)
@@ -1440,7 +1439,7 @@ def submit_batch(session_id: str, data: SubmitBatchIn, db: Session = Depends(ses
         raise HTTPException(404, "Question not found")
     policy = fit.fix_policy(db, s.id)
     problems = [{"question_id": qid, "code": code} for qid, rid in items
-                if (code := _submit_problem(db, rows[qid], rid, policy))]
+                if (code := _submit_problem(db, rows[qid], rid, policy, require_eligible=True))]
     if problems:
         db.rollback()
         raise HTTPException(409, {"code": "batch_not_submitted", "items": problems})
@@ -1460,7 +1459,7 @@ def submit_batch(session_id: str, data: SubmitBatchIn, db: Session = Depends(ses
 def mine(session_id: str, db: Session = Depends(session), user: User = Depends(actor)):
     s = _participant_session(db, session_id, user)
     rows = (db.query(SessionQuestion).filter_by(session_id=s.id, student_id=user.id)
-            .order_by(SessionQuestion.created_at.desc()).all())
+            .order_by(SessionQuestion.created_at.desc(), SessionQuestion.id.desc()).all())
     pages = dict(db.query(QuestionSlide.question_id, QuestionSlide.page).join(
         SessionQuestion, SessionQuestion.id == QuestionSlide.question_id
     ).filter(SessionQuestion.session_id == session_id, SessionQuestion.student_id == user.id).all())
