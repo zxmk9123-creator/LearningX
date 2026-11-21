@@ -169,6 +169,33 @@ class SuitabilityTests(unittest.TestCase):
         self.assertEqual(self.mine(token)[draft["id"]]["suitability"]["reason_codes"], ["not_a_question"])
         self.assertEqual(self.batch(token, [draft]).status_code, 409)
 
+    def test_repeated_words_and_context_free_questions_do_not_reach_the_board(self):
+        self.open_class(guest=True)
+        token = self.student()
+        for text, reason in (
+            ("아무말 아무말 아무말", "not_a_question"),
+            ("모인 고독", "not_a_question"),
+            ("모인 고독은 뭔가요?", "information_only"),
+            ("모인 고독 모인 고독 모인 고독, 왜 생기나요?", "disruption"),
+            ("사과사과사과사과. 분포는 왜 변하나요?", "disruption"),
+            ("그 질문은 어떤가요?", "context_needed"),
+            ("음. 이 부분을 다시 설명해 주세요.", "context_needed"),
+            ("방금 나온 내용은 어떤가요?", "context_needed"),
+            ("어떻게요?", "context_needed"),
+        ):
+            with self.subTest(text=text):
+                draft = self.ask(token, text)
+                self.assertIn(reason, draft["suitability"]["reason_codes"])
+                self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
+                self.assertIsNone(draft["coaching"])
+                self.assertEqual(self.batch(token, [draft]).status_code, 409)
+        self.assertEqual(self.board_texts(), [])
+        for text in ("모인 고독은 집단 안의 소속감과 어떤 관련이 있나요?",
+                     "평균과 분산을 비교한 다음 평균도 예시로 설명해 주세요."):
+            with self.subTest(text=text):
+                self.assertEqual(self.ask(token, text)["suitability"]["status"], "eligible")
+        self.assertEqual(fit.intake_reasons("이 부분을 다시 설명해 주세요.", anchored=True), [])
+
     def test_intake_blocks_new_categories_without_returning_a_level(self):
         self.open_class(guest=True)
         token = self.student()

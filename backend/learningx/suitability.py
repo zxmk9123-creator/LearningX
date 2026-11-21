@@ -140,7 +140,7 @@ _SENTENCE_BREAK = re.compile(r"[!?…\n]+|\.(?=\s|$)")
 _QUESTION_ENDING = re.compile(
     r"(?:나요|[가-힣]가요|까요|습니까|합니까|입니까|됩니까|는지요|런지요|"
     r"뭐(?:야|예요)|무엇(?:이야|인지)|어디(?:야|예요)|누구(?:야|예요)|"
-    r"되니|하는지|되는지|왜요|왜|어떻게)$"
+    r"되니|하는지|되는지|왜요|왜|어떻게요?|어때요)$"
 )
 _QUESTION_WORD = re.compile(r"(?:^|\s)(?:왜|어떻게|어째서|어떤|얼마나?|무엇을?|뭐가?|어디(?:서|에)?|누가|누구|언제|몇)\s+")
 _REQUEST_ENDING = re.compile(
@@ -218,6 +218,18 @@ _STUDENT_REFERENCE = re.compile(
     r"(?:[가-힣]{2,4}\s*(?:학생|학우|수강생)|[가-힣]{2,4}\s*씨)"
     r"(?:은|는|이|가|도|의|한테|에게|을|를)(?=$|\s)"
 )
+_CONTEXT_SUBJECT = re.compile(
+    r"^(?:(?:방금|아까|위에|앞에서)\s*(?:(?:말한|나온|본)\s*)?"
+    r"(?:(?:부분|내용|질문|문장|말|설명|예시|개념|거|것)(?:은|는|이|가|을|를)?)?|"
+    r"(?:이|그|저)\s*(?:부분|내용|질문|문장|말|설명|예시|개념|거|것)(?:은|는|이|가|을|를)?)\s+"
+)
+_GENERIC_QUESTION = re.compile(
+    r"(?:어떤가요|어때요|어때|왜요?|왜\s*그런가요|어떻게요?|어떻게\s*(?:하나요|해야\s*하나요|되나요)|"
+    r"무슨\s*뜻(?:이에요|인가요)|뭐(?:예요|야)|뭔가요|무엇인가요|"
+    r"(?:다시\s*)?(?:설명|알려)\s*(?:해\s*)?(?:주세요|줘요?))"
+)
+_CONTEXT_FILLER = re.compile(r"(?:저기|음|그러니까|아무튼|그래서)(?:요)?")
+_REPEATED_TOKEN = re.compile(r"(.{1,6})\1{2,}")
 _CONTEXT_ONLY = re.compile(
     r"(?:그건|이건|저건|그게|이게|저게|그거|이거|저거|그건요|그것은|이것은|그렇게|이렇게|왜요|왜|어떻게)"
     r"(?:\s*(?:왜|어떻게|갑자기|그렇게|이렇게|되는|된|되는지|뭔|무슨|무엇|무슨\s*뜻|"
@@ -229,7 +241,8 @@ _FACT_LOOKUP = re.compile(
     r"언제(?:예요|인가요|였나요|죠|였죠)|얼마(?:예요|인가요|죠)|어디(?:예요|인가요|죠|에\s*있나요)|"
     r"(?:정의|뜻|약자|풀네임|정답|수도|생년월일|출생지|인구|날짜|가격)(?:가|는|은|이|을|를)?\s*"
     r"(?:뭔가요|뭐예요|뭐야|무엇인가요|어디인가요|어디야|몇이야|몇이죠|알려\s*(?:주세요|줘요?))|"
-    r"(?:[가-힣a-zA-Z0-9]+란|[가-힣a-zA-Z0-9]+이란)\s*(?:뭐예요|뭔가요|무엇인가요)|"
+    r"[가-힣a-zA-Z0-9]+(?:이란|란)\s*(?:뭐예요|뭔가요|무엇인가요)|"
+    r"(?:[가-힣a-zA-Z0-9]+\s+){0,2}[가-힣a-zA-Z0-9]+[은는]\s*(?:뭐예요|뭔가요)|"
     r"(?:(?:오늘|내일)\s*날씨|현재\s*기온|실시간\s*환율|주가)(?:가|는|을|를)?\s*"
     r"(?:알려\s*(?:주세요|줘요?)|어때요?|어떤가요)|"
     r"(?:검색|조회|찾아)\s*(?:해\s*)?(?:주세요|줘요?))$"
@@ -304,6 +317,32 @@ def intake_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     return rule_reasons(text, recent_texts, anchored=anchored)
 
 
+def _missing_context(sentences) -> bool:
+    questions = []
+    for part in sentences:
+        if _CONTEXT_FILLER.fullmatch(part):
+            continue
+        subject_removed = _CONTEXT_SUBJECT.sub("", part, count=1)
+        questions.append(bool(_CONTEXT_ONLY.fullmatch(part) or _GENERIC_QUESTION.fullmatch(subject_removed)))
+    return bool(questions) and all(questions)
+
+
+def _repeated_words(text: str) -> bool:
+    words = re.findall(r"[^\W_]+", text.casefold())
+    for index, word in enumerate(words):
+        if not any(char.isalpha() for char in word):
+            continue
+        if len(word) >= 4 and _REPEATED_TOKEN.fullmatch(word):
+            return True
+        if words[index:index + 3] == [word] * 3:
+            return True
+        for size in (2, 3):
+            phrase = words[index:index + size]
+            if len(phrase) == size and words[index:index + 3 * size] == phrase * 3:
+                return True
+    return False
+
+
 def rule_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     """Only verifiable patterns. A slur list or failed evidence search never decides here."""
     text = _visible_text(text).strip()
@@ -316,16 +355,17 @@ def rule_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     if _PROFANITY.search(plain):
         reasons.append("abusive_language")
     if (_PROMO_LINK.search(text) or (_URL.search(text) and _PROMO_WORD.search(text))
-            or _PROMO_REQUEST.search(text) or _NOISE.fullmatch(text)):
+            or _PROMO_REQUEST.search(text) or _NOISE.fullmatch(text) or _repeated_words(plain)):
         reasons.append("disruption")
     sentences = [part.strip(" ‘’“”\"'") for part in _SENTENCE_BREAK.split(plain) if part.strip()]
     if any(_CONFESSION.search(part) or _NAMED_CONFESSION.search(part) for part in sentences):
         reasons.append("confession")
     if _STUDENT_REFERENCE.search(plain):
         reasons.append("student_reference")
-    if not anchored and _CONTEXT_ONLY.fullmatch(plain):
+    if not anchored and _missing_context(sentences):
         reasons.append("context_needed")
-    if any(_FACT_LOOKUP.search(part) and not _CLASS_LOGISTICS.search(part) for part in sentences):
+    if any(_FACT_LOOKUP.search(part) and not _CLASS_LOGISTICS.search(part)
+           and not _missing_context((part,)) for part in sentences):
         reasons.append("information_only")
     if _DISMISSIVE_MOCKERY.fullmatch(plain) or any(_DISMISSIVE_MOCKERY.fullmatch(part) for part in sentences):
         reasons.append("dismissive_mockery")

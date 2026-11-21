@@ -573,11 +573,12 @@
 
   function renderCoaching(level, c, draft) {
     if (level === 'unassessed') {
-      // No judged level: keep the plant where it is and show the follow-up question only.
+      // Offer guidance without assigning a level or advancing the plant.
       const parts = [el('span', { class: 'lv unassessed', text: levelText(level) }),
         el('span', { text: '이번에는 질문 수준을 판정하지 못했어요. 아래 질문을 참고해 다듬어 보세요.' })];
       if (c && c.follow_up_question) parts.push(el('span', {}, el('b', { text: '생각해 볼 질문 · ' }), c.follow_up_question));
       coachMsg(...parts);
+      renderQuestionGuide({...TEMPLATES.shallow, next: '질문을 한 단계 발전시키기'}, draft);
       return;
     }
     const grew = RANK[level] > RANK[st.stage];
@@ -607,14 +608,18 @@
       return;
     }
     coachMsg(...parts);
-    const t = TEMPLATES[level];
-    if (t) {
+    renderQuestionGuide(TEMPLATES[level], draft);
+    if (!draft) $('q-input').placeholder = '빈칸(___)을 내 생각으로 채워 다시 보내세요';
+  }
+
+  function renderQuestionGuide(guide, draft) {
+    if (guide) {
       $('thread').append(el('div', { class: 'opts' },
-        el('span', { class: 'k', text: `↑ ${t.next}` }),
-        ...t.items.map(([k, tpl]) => el('button', { class: 'opt', type: 'button', onclick: () => {
+        el('span', { class: 'k', text: `↑ ${guide.next}` }),
+        ...guide.items.map(([k, tpl]) => el('button', { class: 'opt', type: 'button', onclick: () => {
           if (draft) {
             const latest = drafts.get(draft.id);
-            if (!latest) return;
+            if (!latest || latest.revision_id !== draft.revision_id || !selectable(latest)) return;
             if (selected.size > 1) $('question-disclosure').open = true;
             if (!editDraft(latest)) return;
           }
@@ -623,7 +628,6 @@
           el('b', { text: k }), ` · ${tpl}`))));
       scrollThread();
     }
-    if (!draft) $('q-input').placeholder = '빈칸(___)을 내 생각으로 채워 다시 보내세요';
   }
 
   function useTemplate(tpl) {

@@ -90,18 +90,22 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.match(teacher, /data-level="unassessed"[^>]*>판정 보류 <span data-count="unassessed">/);
  assert.ok(quTeacher.includes("['all', 'deep', 'mid', 'shallow', 'unassessed']"), 'teacher paints the unassessed count');
  const start = quStudent.indexOf('  function renderCoaching(');
- const end = quStudent.indexOf('\n  function ', start + 10);
+ const end = quStudent.indexOf('  function useTemplate(', start);
  const stages = [];
  const messages = [];
+ const guideCards = [];
  const el = (tag, attrs = {}, ...kids) => ({tag, attrs, kids, append(...more){ kids.push(...more); }});
  const student = vm.createContext({el, levelText, LEVEL: ctx.window.QU.LEVEL, plant: stage => ({plant: stage}),
-  batchSupported: false, RANK: {seed: 0, shallow: 1, mid: 2, deep: 3}, GROWTH: {}, TEMPLATES: {}, st: {stage: 'mid'},
+  batchSupported: false, RANK: {seed: 0, shallow: 1, mid: 2, deep: 3}, GROWTH: {}, TEMPLATES: {shallow: {items: [['비교', '___와 ___는 무엇이 다른가요?']]}}, st: {stage: 'mid'},
   setStage: stage => stages.push(stage), coachMsg: (...parts) => messages.push(parts),
-  $: () => ({append(){}}), scrollThread(){}, submitCurrent(){}, updateComposer(){}, useTemplate(){},
+  $: id => ({append(card){ if (id === 'thread') guideCards.push(card); }}), scrollThread(){}, submitCurrent(){}, updateComposer(){}, useTemplate(){},
   document: {createTextNode: text => ({text})}});
  vm.runInContext(quStudent.slice(start, end) + '\nthis.renderCoaching = renderCoaching;', student);
  student.renderCoaching('unassessed', {follow_up_question: '어떤 기준으로 구별할 수 있을까요?', feedback: '고정 문구'});
  assert.deepEqual(stages, [], 'an unassessed answer never moves the plant');
+ assert.equal(guideCards[0].attrs.class, 'opts');
+ assert.match(guideCards[0].kids[0].attrs.text, /질문을 한 단계 발전시키기/);
+ assert.equal(guideCards[0].kids[1].tag, 'button');
  const texts = JSON.stringify(messages);
  assert.ok(texts.includes('수준 판정 보류') && texts.includes('어떤 기준으로 구별할 수 있을까요?'));
  assert.ok(!texts.includes('얕은') && !texts.includes('중간') && !texts.includes('깊은'), 'no level words for an unassessed answer');
