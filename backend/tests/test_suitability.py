@@ -147,7 +147,7 @@ class SuitabilityTests(unittest.TestCase):
 
     def test_question_form_is_required_before_content_checks(self):
         for text in ("ㅎㅎㅎ", "오늘 배운 건 다 이해했습니다.", "학교 가요.", "이 수업 너무 재밌다?",
-                     "“평균은 왜 움직이나요?”", "평균과 분산", "가상인 내가 너 좋아한다 시1발"):
+                     "“평균은 왜 움직이나요?”", "평균과 분산", "What a great class!", "가상인 내가 너 좋아한다 시1발"):
             with self.subTest(text=text), patch.object(fit, "rule_reasons") as check_content:
                 self.assertEqual(fit.intake_reasons(text), ["not_a_question"])
                 check_content.assert_not_called()

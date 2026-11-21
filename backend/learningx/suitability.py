@@ -142,13 +142,13 @@ _QUESTION_ENDING = re.compile(
     r"뭐(?:야|예요)|무엇(?:이야|인지)|어디(?:야|예요)|누구(?:야|예요)|"
     r"되니|하는지|되는지|왜요|왜|어떻게)$"
 )
-_QUESTION_WORD = re.compile(r"(?:^|\s)(?:왜|어떻게|어째서|무엇을?|뭐가?|어디(?:서|에)?|누가|누구|언제|몇)\s+")
+_QUESTION_WORD = re.compile(r"(?:^|\s)(?:왜|어떻게|어째서|어떤|얼마나?|무엇을?|뭐가?|어디(?:서|에)?|누가|누구|언제|몇)\s+")
 _REQUEST_ENDING = re.compile(
     r"(?:해|어|아|여|려|라|쳐|봐|서)\s*(?:주(?:시겠어요|실래요|실까요|세요)|줘(?:요)?|줄래(?:요)?|"
     r"줄\s*수\s*있(?:니|어(?:요)?)?)$|(?:궁금(?:해요|합니다|해)|알고\s*싶(?:어요|습니다))$"
 )
 _ENGLISH_QUESTION = re.compile(
-    r"^(?:(?:why|what|where|when|who|which|how)\s+\S|"
+    r"^(?!what\s+an?\s)(?:(?:why|what|where|when|who|which|how)\s+\S|"
     r"(?:can|could|would|should|do|does|did|is|are|was|were|will|have|has)\s+\S+\s+\S|"
     r"(?:(?:please\s+)?(?:explain|compare|clarify|describe|show|tell)\s+\S))", re.I
 )
