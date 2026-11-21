@@ -505,7 +505,7 @@ class ClassroomTests(unittest.TestCase):
         import csv, io
         for text in ("=1+1+1", "+SUM(1,2)", "-1+2+3", "@SUM(1,2)", "  =2+2+2", "\t=3+3+3"):
             with patch.object(nit, "coach_question", return_value=coaching("clarify")):
-                row = self.req("POST", f"/v1/sessions/{sid}/questions", token, json={"question": text})
+                row = self.req("POST", f"/v1/sessions/{sid}/questions", token, json={"question": text + " 이 식은 왜 이렇게 계산하나요?"})
             self.assertEqual(row.status_code, 201, row.text)
             submitted = self.req("POST", f"/v1/session-questions/{row.json()['id']}/submit", token)
             self.assertEqual(submitted.status_code, 200, submitted.text)

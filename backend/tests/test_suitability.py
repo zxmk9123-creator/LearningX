@@ -145,6 +145,30 @@ class SuitabilityTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(fit.rule_reasons(text), [], "polite objection, quotation, anonymised experience")
 
+    def test_question_form_is_required_before_content_checks(self):
+        for text in ("ㅎㅎㅎ", "오늘 배운 건 다 이해했습니다.", "학교 가요.", "이 수업 너무 재밌다?",
+                     "“평균은 왜 움직이나요?”", "평균과 분산", "가상인 내가 너 좋아한다 시1발"):
+            with self.subTest(text=text), patch.object(fit, "rule_reasons") as check_content:
+                self.assertEqual(fit.intake_reasons(text), ["not_a_question"])
+                check_content.assert_not_called()
+        for text in ("평균은 왜 움직이나요", "분포는요?", "이 추정량이 왜 편향돼요?",
+                     "몇 개를 더 뽑아야 할까?", "분산도 비교해 주세요.", "Why does the average change?"):
+            with self.subTest(text=text):
+                self.assertTrue(fit.has_question_form(text))
+
+        self.gateway = Gateway()
+        token = self.student()
+        draft = self.ask(token, "강의 내용을 읽고 왔습니다?")
+        self.assertEqual(draft["suitability"]["reason_codes"], ["not_a_question"])
+        self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
+        self.assertEqual(self.gateway.calls, [])
+        with SessionLocal() as db:
+            _, check = fit.current(db, draft["id"])
+            check.status, check.reason_codes = "eligible", "[]"
+            db.commit()
+        self.assertEqual(self.mine(token)[draft["id"]]["suitability"]["reason_codes"], ["not_a_question"])
+        self.assertEqual(self.batch(token, [draft]).status_code, 409)
+
     def test_intake_blocks_new_categories_without_returning_a_level(self):
         self.open_class(guest=True)
         token = self.student()
@@ -158,7 +182,7 @@ class SuitabilityTests(unittest.TestCase):
             "집단극화의 정의를 알려 주세요.": "information_only",
             "집단극화란 무엇인가요?": "information_only",
             "프랑스의 수도가 어디인가요?": "information_only",
-            "헐": "reaction_only",
+            "헐": "not_a_question",
         }
         for text, reason in cases.items():
             with self.subTest(text=text):
@@ -184,11 +208,11 @@ class SuitabilityTests(unittest.TestCase):
         self.open_class(guest=True)
         token = self.student()
         cases = (
-            "가상인 내가 너 좋아한다 시1발",
-            "내가너좋아한다 씨.1.발",
+            "가상인 내가 너 좋아한다 시1발. 평균은 왜 움직이나요?",
+            "내가너좋아한다 씨.1.발. 평균은 왜 움직이나요?",
             "너 진짜 좋 아 한 다 ㅅㅂ. 평균은 왜 움직이나요?",
             "가상인아, 내가 좋아한다! 시*발. 집단극화 원인을 설명해 주세요.",
-            "“널 좋아함 씨１발”",
+            "“널 좋아함 씨１발”. 평균은 왜 움직이나요?",
             "집단극화는 왜 생기나요? 너 좋아한다고 시\u200b1발",
         )
         for text in cases:
@@ -250,7 +274,7 @@ class SuitabilityTests(unittest.TestCase):
             ("수업과 관련 없지만, 게임 닉네임을 골라 주세요.", "off_topic"),
             ("이번 주 로또 당첨 번호를 알려 주세요.", "off_topic"),
             ("좋아하는 연예인 누구예요?", "off_topic"),
-            ("교수님 설명은 들었는데 솔직히 교수님은 진짜 멍청하네요.", "targeted_attack"),
+            ("교수님 설명은 들었는데 솔직히 교수님은 진짜 멍청하네요.", "not_a_question"),
             ("‘교수님은 바보야.’라는 문장이 왜 인신공격에 해당하나요?", None),
             ("교수님은 바보라는 평가에 동의하지 않아요. 어떤 근거가 있나요?", None),
             ("이 사례는 집단극화가 아닌가요? 저녁 메뉴 합의 과정에도 적용되나요?", None),
@@ -284,10 +308,10 @@ class SuitabilityTests(unittest.TestCase):
         self.open_class(guest=True)
         token = self.student()
         blocked = {
-            "교수님 수업 ㅈ노잼이네요": "dismissive_mockery",
-            "이번 강의는 완전 노 잼이네ㅋㅋ": "dismissive_mockery",
-            "야르 ㅋㅋ": "reaction_only",
-            "야레~ ㅎㅎ": "reaction_only",
+            "교수님 수업 ㅈ노잼이네요": "not_a_question",
+            "이번 강의는 완전 노 잼이네ㅋㅋ": "not_a_question",
+            "야르 ㅋㅋ": "not_a_question",
+            "야레~ ㅎㅎ": "not_a_question",
         }
         for text, reason in blocked.items():
             with self.subTest(text=text):
@@ -319,7 +343,7 @@ class SuitabilityTests(unittest.TestCase):
     def test_overlapping_reasons_and_revisions_agree_across_send_paths(self):
         token = self.student()
         good = self.ask(token, "집단극화의 반례를 하나 더 설명해 주세요.")
-        bad = self.ask(token, "제 메일은 student@example.com 입니다. 교수님은 진짜 멍청하네요.")
+        bad = self.ask(token, "제 메일은 student@example.com 입니다. 교수님은 진짜 멍청하네요. 분포는 왜 변하나요?")
         expected = ["personal_or_private", "targeted_attack"]
         self.assertEqual(bad["suitability"]["reason_codes"], expected)
         self.assertEqual(self.mine(token)[bad["id"]]["suitability"]["reason_codes"], expected)
@@ -340,7 +364,7 @@ class SuitabilityTests(unittest.TestCase):
 
     def test_batch_rejects_all_items_when_one_is_ineligible(self):
         token = self.student()
-        bad = self.ask(token, "교수님은 진짜 멍청하네")
+        bad = self.ask(token, "교수님은 진짜 멍청하네. 분포는 왜 변하나요?")
         good = self.ask(token)
         self.assertEqual(bad["suitability"]["primary_reason"], "targeted_attack")
         self.assertEqual(self.batch(token, [good, bad]).status_code, 409)

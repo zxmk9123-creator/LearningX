@@ -36,7 +36,7 @@ MODEL_REASONS = ("off_topic", "targeted_attack", "personal_or_private", "disrupt
                  "dismissive_mockery", "reaction_only", "context_needed",
                  "confession", "student_reference", "information_only", "abusive_language")
 # What the student should fix first.
-PRIORITY = ("personal_or_private", "targeted_attack", "abusive_language", "dismissive_mockery", "disruption",
+PRIORITY = ("not_a_question", "personal_or_private", "targeted_attack", "abusive_language", "dismissive_mockery", "disruption",
             "reaction_only", "confession", "student_reference", "off_topic", "information_only",
             "context_needed", "check_unavailable")
 MAX_ATTEMPTS = 3
@@ -137,6 +137,21 @@ _QUOTE_ANALYSIS = re.compile(
     r"(?:교안|작품|소설|논문|인용|토론|분석|의미|이유|근거|문법|차이|왜|어떻게|어떤|해당)"
 )
 _SENTENCE_BREAK = re.compile(r"[!?…\n]+|\.(?=\s|$)")
+_QUESTION_ENDING = re.compile(
+    r"(?:나요|[가-힣]가요|까요|습니까|합니까|입니까|됩니까|는지요|런지요|"
+    r"뭐(?:야|예요)|무엇(?:이야|인지)|어디(?:야|예요)|누구(?:야|예요)|"
+    r"되니|하는지|되는지|왜요|왜|어떻게)$"
+)
+_QUESTION_WORD = re.compile(r"(?:^|\s)(?:왜|어떻게|어째서|무엇을?|뭐가?|어디(?:서|에)?|누가|누구|언제|몇)\s+")
+_REQUEST_ENDING = re.compile(
+    r"(?:해|어|아|여|려|라|쳐|봐|서)\s*(?:주(?:시겠어요|실래요|실까요|세요)|줘(?:요)?|줄래(?:요)?|"
+    r"줄\s*수\s*있(?:니|어(?:요)?)?)$|(?:궁금(?:해요|합니다|해)|알고\s*싶(?:어요|습니다))$"
+)
+_ENGLISH_QUESTION = re.compile(
+    r"^(?:(?:why|what|where|when|who|which|how)\s+\S|"
+    r"(?:can|could|would|should|do|does|did|is|are|was|were|will|have|has)\s+\S+\s+\S|"
+    r"(?:(?:please\s+)?(?:explain|compare|clarify|describe|show|tell)\s+\S))", re.I
+)
 _PROFANITY = re.compile(
     r"(?<!\w)(?:(?:[시씨쒸]|ᄉ[ᅵ1])(?:[\s._*·-]*[1l!][\s._*·-]*)?"
     r"[\s._*·-]*(?:발|빨|팔|발)|(?:ᄉ[\s._*·-]*ᄇ|ᄊ[\s._*·-]*ᄇ)|"
@@ -265,6 +280,30 @@ def _without_analyzed_quotes(text: str) -> str:
     return _QUOTED_EXAMPLE.sub(exclude, text)
 
 
+def has_question_form(text: str) -> bool:
+    """Recognize interrogatives and requests for clarification before checking content."""
+    visible = _QUOTED_EXAMPLE.sub(" ", _visible_text(text))
+    clauses = re.split(r"([!?…\n]+|\.(?=\s|$))", visible)
+    for part, punctuation in zip(clauses[::2], [*clauses[1::2], ""]):
+        clause = part.strip(" .,!?…~ ‘’“”\"'")
+        if not clause:
+            continue
+        if (_QUESTION_ENDING.search(clause) or _REQUEST_ENDING.search(clause)
+                or _ENGLISH_QUESTION.match(clause)):
+            return True
+        if _QUESTION_WORD.search(clause) and re.search(r"(?:야|지|니|냐|어|해|될까|할까|요)$", clause):
+            return True
+        if "?" in punctuation and re.search(r"(?:은요|는요|죠|지요|맞아|돼|됐어)$", clause):
+            return True
+    return False
+
+
+def intake_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
+    if not has_question_form(text):
+        return ["not_a_question"]
+    return rule_reasons(text, recent_texts, anchored=anchored)
+
+
 def rule_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     """Only verifiable patterns. A slur list or failed evidence search never decides here."""
     text = _visible_text(text).strip()
@@ -366,10 +405,11 @@ def effective_check(text: str, check: "SuitabilityCheck | None", policy_version:
     change its reference set and must not retroactively alter earlier drafts.
     """
     state = public(check) or legacy_pending(policy_version)
-    reasons = rule_reasons(text, anchored=anchored)
+    reasons = intake_reasons(text, anchored=anchored)
     if not reasons:
         return state
-    codes = ordered([*reasons, *(code for code in state["reason_codes"] if code != "check_unavailable")])
+    codes = reasons if reasons == ["not_a_question"] else ordered(
+        [*reasons, *(code for code in state["reason_codes"] if code != "check_unavailable")])
     return {**state, "status": "needs_revision", "mode": "rules",
             "reason_codes": codes, "primary_reason": codes[0]}
 
@@ -486,6 +526,10 @@ def evaluate(db, row, session, check, text) -> bool:
     check.attempt_id = uid()
     check.attempts = 0
     check.lease_until = None
+    if not has_question_form(text):
+        check.status, check.reason_codes, check.checked_at = "needs_revision", '["not_a_question"]', now()
+        check.mode = "rules"
+        return False
     reasons = rule_reasons(text, _recent_texts(db, row, session.id), anchored=has_anchor(db, row.id))
     model = uses_model(db, session)
     request_topics = list(_personal_request_topics(_visible_text(text))) if not model else []
@@ -576,14 +620,16 @@ def run(claimed, gateway_factory=None, session_factory=None) -> str:
         if head is None or head.revision_id != revision_id:
             return "stale"
         text, context = _context(db, row_id)
-    gateway = (gateway_factory or nit.model_gateway)()
-    result, failed = None, False
-    try:
-        if gateway is None:
-            raise RuntimeError("model unavailable in worker")
-        result = classify(gateway, context, text)
-    except Exception:
-        failed = True
+    question_form = has_question_form(text)
+    result, failed = ("needs_revision", ["not_a_question"]), False
+    if question_form:
+        try:
+            gateway = (gateway_factory or nit.model_gateway)()
+            if gateway is None:
+                raise RuntimeError("model unavailable in worker")
+            result = classify(gateway, context, text)
+        except Exception:
+            failed = True
     with opener() as db:
         check = db.query(SuitabilityCheck).filter_by(session_question_id=row_id, revision_id=revision_id) \
             .with_for_update().first()
@@ -604,6 +650,8 @@ def run(claimed, gateway_factory=None, session_factory=None) -> str:
                 outcome = "retry"
         else:
             check.status, codes = result
+            if not question_form:
+                check.mode = "rules"
             check.reason_codes = json.dumps(codes)
             check.lease_until = None
             check.checked_at = now()

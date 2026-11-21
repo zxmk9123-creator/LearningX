@@ -295,7 +295,9 @@
 
   function showDraftOutcome(draft) {
     if (draft.suitability?.status === 'needs_revision') {
-      coachMsg(el('span', {text: REJECTION_MESSAGE}));
+      coachMsg(el('span', {class: 'question-rejection'},
+        el('span', {class: 'question-rejection-icon', 'aria-hidden': 'true', text: '!'}),
+        el('span', {text: REJECTION_MESSAGE})));
     } else if (draft.suitability?.status === 'eligible') {
       renderCoaching(draft.level, draft.coaching, draft);
     } else if (draft.suitability?.primary_reason === 'check_unavailable') {

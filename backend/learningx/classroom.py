@@ -1282,7 +1282,7 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
     if data.anchor and (data.slide_page is None or page not in visible_pages(db.get(Material, s.material_id))):
         raise HTTPException(422, "Invalid question anchor")
     anchored = bool(data.anchor and data.anchor.quote.strip())
-    coaching = ({"mode": "suitability_blocked"} if fit.rule_reasons(data.question, anchored=anchored)
+    coaching = ({"mode": "suitability_blocked"} if fit.intake_reasons(data.question, anchored=anchored)
                 else _coach(db, s, user, data.question))
     _lock_open(db, s)
     q = Question(course_id=s.course_id, material_id=s.material_id, student_id=user.id,
@@ -1334,7 +1334,7 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
         raise HTTPException(423, "The class is not taking questions right now")
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
-    coaching = ({"mode": "suitability_blocked"} if fit.rule_reasons(data.text, anchored=fit.has_anchor(db, row.id))
+    coaching = ({"mode": "suitability_blocked"} if fit.intake_reasons(data.text, anchored=fit.has_anchor(db, row.id))
                 else _coach(db, s, user, data.text))
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)  # same order as submits: session row, then question rows
