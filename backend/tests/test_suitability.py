@@ -174,9 +174,9 @@ class SuitabilityTests(unittest.TestCase):
         token = self.student()
         for text, reason in (
             ("아무말 아무말 아무말", "not_a_question"),
-            ("모인 고독", "not_a_question"),
-            ("모인 고독은 뭔가요?", "information_only"),
-            ("모인 고독 모인 고독 모인 고독, 왜 생기나요?", "disruption"),
+            ("고인 모독", "not_a_question"),
+            ("고인 모독은 뭔가요?", "information_only"),
+            ("고인 모독 고인 모독 고인 모독, 왜 생기나요?", "disruption"),
             ("사과사과사과사과. 분포는 왜 변하나요?", "disruption"),
             ("그 질문은 어떤가요?", "context_needed"),
             ("음. 이 부분을 다시 설명해 주세요.", "context_needed"),
@@ -190,11 +190,36 @@ class SuitabilityTests(unittest.TestCase):
                 self.assertIsNone(draft["coaching"])
                 self.assertEqual(self.batch(token, [draft]).status_code, 409)
         self.assertEqual(self.board_texts(), [])
-        for text in ("모인 고독은 집단 안의 소속감과 어떤 관련이 있나요?",
+        for text in ("고인 모독 표현은 토론 윤리에서 어떻게 다루나요?",
                      "평균과 분산을 비교한 다음 평균도 예시로 설명해 주세요."):
             with self.subTest(text=text):
                 self.assertEqual(self.ask(token, text)["suitability"]["status"], "eligible")
         self.assertEqual(fit.intake_reasons("이 부분을 다시 설명해 주세요.", anchored=True), [])
+
+    def test_deceased_mockery_is_blocked_without_penalizing_academic_analysis(self):
+        self.open_class(guest=True)
+        token = self.student()
+        for text in (
+            "고인은 잘 죽었네요ㅋㅋ. 평균은 왜 움직이나요?",
+            "죽은 사람은 쓰레기였다. 수업에서 배운 개념은 어떻게 적용하나요?",
+            "고인 모독해 주세요.",
+            "죽어도 싸요. 사례를 분석해 주세요.",
+        ):
+            with self.subTest(text=text):
+                draft = self.ask(token, text)
+                self.assertEqual(draft["suitability"]["primary_reason"], "targeted_attack")
+                self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
+                self.assertIsNone(draft["coaching"])
+                self.assertEqual(self.batch(token, [draft]).status_code, 409)
+        self.assertEqual(self.board_texts(), [])
+
+        for text in (
+            "고인 모독이 유족에게 미치는 영향을 토론 윤리로 분석할 수 있나요?",
+            "교안에서 ‘고인은 잘 죽었네요’라는 표현은 왜 모독에 해당하나요?",
+            "고인은 어떤 업적으로 평가받나요?",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self.ask(token, text)["suitability"]["status"], "eligible")
 
     def test_intake_blocks_new_categories_without_returning_a_level(self):
         self.open_class(guest=True)

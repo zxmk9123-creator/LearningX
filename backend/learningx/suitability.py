@@ -164,6 +164,15 @@ _DIRECT_ATTACK = re.compile(
     r"(?:개?멍청(?:이(?:야|네요)?|하네요?|하다|해요?|하냐|하세요)|개?바보(?:야|냐|네요|예요)?|"
     r"병신(?:이야|이냐|이네요)?|꺼져(?:라)?|죽어(?:라)?)(?=$|[.!?…])"
 )
+_DECEASED_MOCKERY = re.compile(
+    r"(?:고\s*인|죽은\s*(?:사람|놈|인간)|돌아가신\s*(?:분|사람)|망자)"
+    r"(?:은|는|이|가|을|를|도)?[,\s]*"
+    r"(?:(?:진짜|정말|완전)\s+)?"
+    r"(?:잘\s*죽었(?:다|네|어|네요)|죽어\s*마땅|쓰레기(?:야|네|네요|였다)|"
+    r"멍청했(?:다|네|어)|바보(?:야|네|네요|였다)|조롱(?:해|하자)|모독(?:해|하자))(?=$|[^\w]|[ᄏᄒ])"
+    r"|(?:죽어도\s*싸(?:다|네|요)?|꼴좋게\s*죽었(?:다|네|어)|뒈져서\s*잘(?:됐|됬)(?:다|네|어))"
+    r"(?=$|[^\w]|[ᄏᄒ])"
+)
 # A narrow topic plus a personal recommendation or prediction request. These topic
 # patterns also recognize relevant course titles and approved learning objectives.
 _PERSONAL_TOPICS = tuple(re.compile(topic) for topic in (
@@ -350,7 +359,7 @@ def rule_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     if _PHONE.search(text) or _EMAIL.search(text) or _RRN.search(text) or _PRIVATE_REQUEST.search(text):
         reasons.append("personal_or_private")
     plain = _without_analyzed_quotes(text).strip().rstrip(".!?…~ ")
-    if _DIRECT_ATTACK.search(plain):
+    if _DIRECT_ATTACK.search(plain) or _DECEASED_MOCKERY.search(plain):
         reasons.append("targeted_attack")
     if _PROFANITY.search(plain):
         reasons.append("abusive_language")
@@ -391,7 +400,7 @@ SYSTEM = """당신은 수업 중 학생 질문이 교수자에게 전달하기�
 다음 이유 코드만 사용합니다.
 - off_topic: 수업 개념·활동·진행과 명백히 무관한 질문이나 요청. 선행 개념, 새 사례, 수업 운영 질문은 관련 있음으로 봅니다. 교안에서 찾지 못했다는 이유만으로 무관하다고 하지 마세요.
 - abusive_language: 직접 사용하는 욕설과 띄어쓰기, 초성, 숫자, 기호를 섞은 표기. 학술적 분석을 위한 명시적 인용은 허용합니다.
-- targeted_attack: 개인·집단을 겨냥한 모욕·조롱·비하·위협. 주장·방법에 대한 반론, 분석 대상인 표현의 인용, 존중하는 불만 제기는 해당하지 않습니다.
+- targeted_attack: 개인·집단을 겨냥한 모욕·조롱·비하·위협, 고인 비하나 죽음을 조롱하는 표현 및 그 요청. 주장·방법에 대한 반론, 분석 대상인 표현의 인용, 존중하는 불만 제기는 해당하지 않습니다.
 - personal_or_private: 무관한 사생활 캐묻기, 전달에 불필요한 식별정보·민감한 개인사 노출. 식별정보 없이 개념과 연결한 경험은 해당하지 않습니다. 민감한 주제라는 이유만으로 해당하지 않습니다.
 - dismissive_mockery: 질문이나 구체적 개선 요청 없이 수업·교안·설명을 조롱으로 깎아내리는 발화. 수업 속도, 설명 방식, 난이도에 대한 구체적인 피드백은 관련 있음으로 봅니다.
 - reaction_only: 추임새·밈·웃음으로만 이루어져 전달할 질문이나 피드백이 없는 발화. 웃음 표현 뒤에 의미 있는 질문이 이어지면 해당하지 않습니다.
