@@ -503,11 +503,12 @@ class ClassroomTests(unittest.TestCase):
     def test_csv_question_cells_are_not_formulas(self):
         sid, token = self._open_for_security_test()
         import csv, io
-        for text in ("=1+1+1", "+SUM(1,2)", "-1+2+3", "@SUM(1,2)", "  =1+1+1", "\t=1+1+1"):
+        for text in ("=1+1+1", "+SUM(1,2)", "-1+2+3", "@SUM(1,2)", "  =2+2+2", "\t=3+3+3"):
             with patch.object(nit, "coach_question", return_value=coaching("clarify")):
                 row = self.req("POST", f"/v1/sessions/{sid}/questions", token, json={"question": text})
             self.assertEqual(row.status_code, 201, row.text)
-            self.req("POST", f"/v1/session-questions/{row.json()['id']}/submit", token)
+            submitted = self.req("POST", f"/v1/session-questions/{row.json()['id']}/submit", token)
+            self.assertEqual(submitted.status_code, 200, submitted.text)
         exported = self.req("GET", f"/v1/sessions/{sid}/export", self.tf)
         cells = list(csv.reader(io.StringIO(exported.content.decode("utf-8-sig"))))[1:]
         self.assertEqual(len(cells), 6)
