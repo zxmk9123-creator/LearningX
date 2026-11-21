@@ -124,6 +124,22 @@ class ClassroomTests(unittest.TestCase):
         self.assertEqual(live["index"], expected)
         self.assertNotIn("index", self.req("GET", path + "/live", self.tf,
                                            params={"index_version": live["index_version"]}).json())
+        with patch.object(nit, "coach_question", return_value={**coaching("analyze"), "mode": "FALLBACK"}):
+            response = self.req("POST", path + "/questions", first, json={
+                "question": "비교 기준이 달라지면 결과를 어떻게 해석하나요?", "slide_page": 1, "anchor": anchor,
+            })
+        self.assertEqual(response.status_code, 201, response.text)
+        unassessed = response.json()
+        self.assertEqual(unassessed["level"], classroom.UNASSESSED)
+        self.assertEqual(self.req("GET", path + "/live", first).json()["index"], expected)
+        submitted = self.req("POST", f"/v1/session-questions/{unassessed['id']}/submit", first)
+        self.assertEqual(submitted.status_code, 200, submitted.text)
+        self.assertEqual(self.req("GET", path + "/live", self.tf).json()["index"], expected)
+        self.assertEqual(self.req("GET", path + "/live", first).json()["index"], expected)
+        self.assertIn(unassessed["id"], {item["id"] for item in self.req(
+            "GET", path + "/board", self.tf).json()["items"]})
+        self.assertIn(unassessed["id"], {item["id"] for item in self.req(
+            "GET", path + "/mine", first).json()["items"]})
         acknowledge = reaction + "/acknowledge"
         payload = {"page": 2, "version": live["slide"]["version"], "tag_ids": [tag_id]}
         self.assertEqual(self.req("POST", acknowledge, self.tf, json={**payload, "version": "stale"}).status_code, 409)

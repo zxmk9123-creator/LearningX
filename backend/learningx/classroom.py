@@ -620,7 +620,9 @@ def _snapshot(db, current, user, faculty, version, cursor=None):
     query = db.query(SessionQuestion.id, SessionQuestion.level, QuestionSlide.page,
                      SessionQuestion.latest_text, QuestionAnchor.location).join(
         QuestionSlide, QuestionSlide.question_id == SessionQuestion.id
-    ).outerjoin(QuestionAnchor, QuestionAnchor.question_id == SessionQuestion.id).filter(SessionQuestion.session_id == session_id)
+    ).outerjoin(QuestionAnchor, QuestionAnchor.question_id == SessionQuestion.id).filter(
+        SessionQuestion.session_id == session_id, SessionQuestion.level != UNASSESSED,
+    )
     if faculty:
         query = query.filter(SessionQuestion.submitted.is_(True), SessionQuestion.hidden.is_(False))
     else:
