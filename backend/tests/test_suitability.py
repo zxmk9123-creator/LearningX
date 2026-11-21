@@ -203,6 +203,7 @@ class SuitabilityTests(unittest.TestCase):
             "고인은 잘 죽었네요ㅋㅋ. 평균은 왜 움직이나요?",
             "죽은 사람은 쓰레기였다. 수업에서 배운 개념은 어떻게 적용하나요?",
             "고인 모독해 주세요.",
+            "고인을 비하해주세요.",
             "죽어도 싸요. 사례를 분석해 주세요.",
         ):
             with self.subTest(text=text):
