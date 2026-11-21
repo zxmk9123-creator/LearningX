@@ -180,6 +180,41 @@ class SuitabilityTests(unittest.TestCase):
                 self.assertEqual(blocked.status_code, 409)
         self.assertEqual(self.board_texts(), [])
 
+    def test_mixed_confession_and_disguised_profanity_keep_both_reasons(self):
+        self.open_class(guest=True)
+        token = self.student()
+        cases = (
+            "가상인 내가 너 좋아한다 시1발",
+            "내가너좋아한다 씨.1.발",
+            "너 진짜 좋 아 한 다 ㅅㅂ. 평균은 왜 움직이나요?",
+            "가상인아, 내가 좋아한다! 시*발. 집단극화 원인을 설명해 주세요.",
+            "“널 좋아함 씨１발”",
+            "집단극화는 왜 생기나요? 너 좋아한다고 시\u200b1발",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                body = self.ask(token, text)
+                self.assertEqual(set(body["suitability"]["reason_codes"]), {"confession", "abusive_language"})
+                self.assertEqual(body["message"], fit.REJECTION_MESSAGE)
+                self.assertIsNone(body["level"])
+                self.assertIsNone(body["coaching"])
+                self.assertIsNone(self.mine(token)[body["id"]]["text"])
+                self.assertEqual(self.batch(token, [body]).status_code, 409)
+        self.assertEqual(self.board_texts(), [])
+
+    def test_mixed_rules_respect_academic_context_without_exempting_the_whole_input(self):
+        cases = {
+            "교안에서 ‘내가 너 좋아한다 시1발’이라는 문장은 어떤 화행인가요?": [],
+            "교안에서 ‘시1발’이라는 표현은 어떤 언어 현상인가요? 씨1발": ["abusive_language"],
+            "저는 이 이론을 좋아한다는 말과 그 이론이 타당하다는 주장은 어떻게 다른가요?": [],
+            "교육의 시발점이 바뀌면 어떤 효과가 나타나나요?": [],
+            "프랑스의 수도가 어디인가요? 평균 이동은 왜 생기나요?": ["information_only"],
+            "오늘 수업은 노잼이네요. 평균 이동은 왜 생기나요?": ["dismissive_mockery"],
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(fit.rule_reasons(text), expected)
+
     def test_intake_keeps_academic_questions_and_explicit_anchors(self):
         for text in (
             "학생 집단의 평균 이동을 분산과 비교하면 어떻게 해석할 수 있나요?",
@@ -211,6 +246,7 @@ class SuitabilityTests(unittest.TestCase):
         token = self.student()
         checks = [
             ("오늘 저녁 메뉴 대신 골라 줘.", "off_topic"),
+            ("오늘 저녁 메뉴 대신 골라 줘. 집단극화는 왜 발생하나요?", "off_topic"),
             ("수업과 관련 없지만, 게임 닉네임을 골라 주세요.", "off_topic"),
             ("이번 주 로또 당첨 번호를 알려 주세요.", "off_topic"),
             ("좋아하는 연예인 누구예요?", "off_topic"),
