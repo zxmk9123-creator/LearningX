@@ -648,27 +648,93 @@ def _pdf_response(content):
                              "Content-Disposition": 'attachment; filename="lesson.pdf"'})
 
 
-def _publisher(db, credentials, session_id, current=None):
-    claims = decode_token(credentials)
-    query = select(User, Member.role).select_from(User).where(User.id == claims["sub"])
-    if current is None:
-        query = (query.add_columns(ClassSession, Material)
-                 .outerjoin(ClassSession, ClassSession.id == session_id)
-                 .outerjoin(Member, (Member.course_id == ClassSession.course_id) & (Member.user_id == User.id))
-                 .outerjoin(Material, Material.id == ClassSession.material_id))
-    else:
-        query = query.outerjoin(Member, (Member.course_id == current.course_id) & (Member.user_id == User.id))
-    row = db.execute(query).one_or_none()
-    if row is None or not row[0].active:
+# ---------- live publish ----------
+# share_slide checks access with a read-only lookup, prepares the page, then
+# writes under a row lock on the session. PostgreSQL writes in two pipelined
+# round trips; other databases use the ORM. Both write paths re-run the same
+# rules below inside the lock, so a class closed or a permission revoked
+# after the lookup still blocks the write.
+
+def _require_publisher(claims, active, email, user_role, member_role):
+    """Identity and role rules shared by the lookup and both write paths."""
+    if not active:
         raise HTTPException(401, "Inactive or unknown user")
-    user, member_role, *session_material = row
+    if claims.get("scope") is not None or email.endswith("@join.question-up.local"):
+        raise HTTPException(403, "Session token cannot access this endpoint")
+    if member_role is None or (member_role != "faculty" and user_role != "admin"):
+        raise HTTPException(403, "Course access denied")
+
+
+def _require_open(status):
+    if status == "CLOSED":
+        raise HTTPException(409, "Class has ended")
+
+
+def _replayed_result(previous, snapshots):
+    """Return the stored result for a batch already written, or 409 if it was used for other pages.
+
+    `previous` holds the batch's (position, version, page, total, content) rows in position order.
+    """
+    if [item[2] for item in previous] != [page for page, _, _ in snapshots]:
+        raise HTTPException(409, "Batch identifier already used")
+    position, version, page, total, content = previous[-1]
+    return {"page": page, "total": total, "version": version, **json.loads(content), "sequence": position}
+
+
+def _require_expected_version(current_version, expected_version):
+    if expected_version is not None and (current_version is None or current_version != expected_version):
+        raise HTTPException(409, "The shared page changed. Refresh before publishing again.")
+
+
+def _plan_publish(batch_id, snapshots, last_position, initial):
+    """Transition rows to insert and the new live slide, from the locked current state.
+
+    `initial` is the current live slide as (version, page, total, content), or None.
+    The first publish also records the opening slide as position 1 so history starts there.
+    Returns (rows, slide): rows are (position, version, page, total, encoded content);
+    slide is (page, total, version, content dict, encoded content).
+    """
+    position = last_position or 0
+    rows = []
+    if position == 0 and initial is not None:
+        position = 1
+        version, page, total, content = initial
+        rows.append((1, version, page, total, content))
+    for offset, (page, total, content) in enumerate(snapshots):
+        version = f"{batch_id}:{offset}"
+        content = {**content, "sequence": position + offset + 1}
+        encoded = json.dumps(content, ensure_ascii=False)
+        rows.append((position + offset + 1, version, page, total, encoded))
+    return rows, (page, total, version, content, encoded)
+
+
+def _publish_response(slide):
+    page, total, version, content, _ = slide
+    return {"page": page, "total": total, "version": version, **content}
+
+
+def _publisher(db, credentials, session_id):
+    """Read-only access lookup before the page is prepared; the write re-checks under lock."""
+    claims = decode_token(credentials)
+    row = db.execute(
+        select(User, Member.role, ClassSession, Material)
+        .select_from(User)
+        .outerjoin(ClassSession, ClassSession.id == session_id)
+        .outerjoin(Member, (Member.course_id == ClassSession.course_id) & (Member.user_id == User.id))
+        .outerjoin(Material, Material.id == ClassSession.material_id)
+        .where(User.id == claims["sub"])
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(401, "Inactive or unknown user")
+    user, member_role, current, material = row
+    if not user.active:
+        raise HTTPException(401, "Inactive or unknown user")
     if claims.get("scope") is not None or user.email.endswith("@join.question-up.local"):
         raise HTTPException(403, "Session token cannot access this endpoint")
-    if session_material and session_material[0] is None:
+    if current is None:
         raise HTTPException(404, "Session not found")
-    if member_role is None or (member_role != "faculty" and user.role != "admin"):
-        raise HTTPException(403, "Course access denied")
-    return session_material
+    _require_publisher(claims, user.active, user.email, user.role, member_role)
+    return current, material
 
 
 def _notify_published_page(session_id, material, page, prepared):
@@ -693,6 +759,8 @@ join users u on u.id = %s
 left join members m on m.course_id = cs.course_id and m.user_id = u.id
 left join live_slides ls on ls.session_id = cs.id
 where cs.id = %s"""
+_PUBLISH_REPLAYED = ("select position, version, page, total, content from live_transitions "
+                     "where session_id = %s and left(version, length(%s)) = %s order by position")
 _TRANSITION_INSERT = ("insert into live_transitions (session_id, position, version, page, total, content) "
                       "values (%s, %s, %s, %s, %s, %s)")
 
@@ -700,8 +768,8 @@ _TRANSITION_INSERT = ("insert into live_transitions (session_id, position, versi
 def _publish_pipelined(session_id, claims, batch_id, snapshots, expected_version):
     """PostgreSQL publish in two round trips: lock+read, then write+commit.
 
-    Same checks, ordering and lock as the ORM path below; the lock statement is
-    queued before the read so the read's snapshot follows any earlier publisher.
+    The lock statement is queued before the read so the read's snapshot
+    follows any earlier publisher.
     """
     import psycopg
 
@@ -722,21 +790,24 @@ def _publish_pipelined(session_id, claims, batch_id, snapshots, expected_version
                 if lock.fetchone() is None:
                     raise HTTPException(404, "Session not found")
                 row = read.fetchone()
-                result = _publish_checks(conn, session_id, claims, batch_id, snapshots, expected_version, row)
-                if result is not None:
+                if row is None:
+                    raise HTTPException(401, "Inactive or unknown user")
+                (status, active, email, user_role, member_role,
+                 page0, total0, version0, content0, last_position, replayed) = row
+                _require_publisher(claims, active, email, user_role, member_role)
+                _require_open(status)
+                if replayed:
+                    previous = conn.execute(_PUBLISH_REPLAYED, (session_id, prefix, prefix)).fetchall()
+                    result = _replayed_result(previous, snapshots)
                     conn.execute("rollback")
                     return result, False
-                (status, _, _, _, _, page0, total0, version0, content0, position, _) = row
-                position = position or 0
-                if position == 0 and version0 is not None:
-                    position = 1
-                    conn.execute(_TRANSITION_INSERT, (session_id, 1, version0, page0, total0, content0))
-                for offset, (page, total, content) in enumerate(snapshots):
-                    version = f"{batch_id}:{offset}"
-                    content = {**content, "sequence": position + offset + 1}
-                    encoded = json.dumps(content, ensure_ascii=False)
-                    conn.execute(_TRANSITION_INSERT, (session_id, position + offset + 1, version, page, total, encoded))
-                if version0 is None:
+                _require_expected_version(version0, expected_version)
+                initial = None if version0 is None else (version0, page0, total0, content0)
+                rows, slide = _plan_publish(batch_id, snapshots, last_position, initial)
+                for position, version, page, total, content in rows:
+                    conn.execute(_TRANSITION_INSERT, (session_id, position, version, page, total, content))
+                page, total, version, _, encoded = slide
+                if initial is None:
                     conn.execute("insert into live_slides (session_id, page, total, version, content) "
                                  "values (%s, %s, %s, %s, %s)", (session_id, page, total, version, encoded))
                 else:
@@ -744,7 +815,7 @@ def _publish_pipelined(session_id, claims, batch_id, snapshots, expected_version
                                  "where session_id = %s", (page, total, version, encoded, session_id))
                 sent_writes = True
                 conn.execute("commit")
-            return {"page": page, "total": total, "version": version, **content}, True
+            return _publish_response(slide), True
         except psycopg.OperationalError:
             # A pooled connection the server dropped fails before any write is sent.
             raw.invalidate()
@@ -760,58 +831,8 @@ def _publish_pipelined(session_id, claims, batch_id, snapshots, expected_version
             raw.close()
 
 
-def _publish_checks(conn, session_id, claims, batch_id, snapshots, expected_version, row):
-    if row is None:
-        raise HTTPException(401, "Inactive or unknown user")
-    status, active, email, user_role, member_role, _, _, version0, _, _, replayed = row
-    if not active:
-        raise HTTPException(401, "Inactive or unknown user")
-    if claims.get("scope") is not None or email.endswith("@join.question-up.local"):
-        raise HTTPException(403, "Session token cannot access this endpoint")
-    if member_role is None or (member_role != "faculty" and user_role != "admin"):
-        raise HTTPException(403, "Course access denied")
-    if status == "CLOSED":
-        raise HTTPException(409, "Class has ended")
-    if replayed:
-        prefix = batch_id + ":"
-        previous = conn.execute(
-            "select position, version, page, total, content from live_transitions "
-            "where session_id = %s and left(version, length(%s)) = %s order by position",
-            (session_id, prefix, prefix)).fetchall()
-        if [item[2] for item in previous] != [page for page, _, _ in snapshots]:
-            raise HTTPException(409, "Batch identifier already used")
-        position, version, page, total, content = previous[-1]
-        return {"page": page, "total": total, "version": version, **json.loads(content), "sequence": position}
-    if expected_version is not None and (version0 is None or version0 != expected_version):
-        raise HTTPException(409, "The shared page changed. Refresh before publishing again.")
-    return None
-
-
-@router.put("/sessions/{session_id}/live")
-def share_slide(session_id: str, data: ShareSlide, request: Request,
-                credentials: HTTPAuthorizationCredentials | None = Depends(scheme)):
-    started = time.perf_counter()
-    with LiveReadSession() as db:
-        current, material = _publisher(db, credentials, session_id)
-        if current.status == "CLOSED":
-            raise HTTPException(409, "Class has ended")
-        db.expunge(material)
-    record_phase(request, "lookup", started)
-    started = time.perf_counter()
-    snapshots = [(page, *build_snapshot(material, page)) for page in (data.pages or [data.page])]
-    record_phase(request, "prepare", started)
-    last_page, _, last_content = snapshots[-1]
-    # Students fetch the page bytes from memory the moment they are notified.
-    prepared = prepare_shared_page(material, last_page, last_content.get("before"), last_content.get("after"))
-    started = time.perf_counter()
-    batch_id = data.batch_id or uid()
-    claims = decode_token(credentials)
-    if publish_engine.dialect.name == "postgresql":
-        result, wrote = _publish_pipelined(session_id, claims, batch_id, snapshots, data.expected_version)
-        record_phase(request, "write", started)
-        if wrote:
-            _notify_published_page(session_id, material, last_page, prepared)
-        return result
+def _publish_orm(session_id, claims, batch_id, snapshots, expected_version):
+    """Publish through the ORM (SQLite and any non-PostgreSQL database)."""
     with PublishSession() as db:
         transitions = select(LiveTransition).where(LiveTransition.session_id == ClassSession.id)
         last_position = transitions.with_only_columns(func.max(LiveTransition.position)).scalar_subquery()
@@ -835,46 +856,53 @@ def share_slide(session_id: str, data: ShareSlide, request: Request,
         if row is None:
             raise HTTPException(401, "Inactive or unknown user")
         current, user, member_role, initial, position, replayed = row
-        if not user.active:
-            raise HTTPException(401, "Inactive or unknown user")
-        if claims.get("scope") is not None or user.email.endswith("@join.question-up.local"):
-            raise HTTPException(403, "Session token cannot access this endpoint")
-        if member_role is None or (member_role != "faculty" and user.role != "admin"):
-            raise HTTPException(403, "Course access denied")
-        if current.status == "CLOSED":
-            raise HTTPException(409, "Class has ended")
+        _require_publisher(claims, user.active, user.email, user.role, member_role)
+        _require_open(current.status)
         if replayed:
             previous = (db.query(LiveTransition).filter_by(session_id=session_id)
                         .filter(LiveTransition.version.startswith(batch_id + ":"))
                         .order_by(LiveTransition.position).all())
-            if [item.page for item in previous] != [page for page, _, _ in snapshots]:
-                raise HTTPException(409, "Batch identifier already used")
-            last = previous[-1]
-            record_phase(request, "write", started)
-            return {"page": last.page, "total": last.total, "version": last.version,
-                    **json.loads(last.content), "sequence": last.position}
-        position = position or 0
-        if data.expected_version is not None and (initial is None or initial.version != data.expected_version):
-            raise HTTPException(409, "The shared page changed. Refresh before publishing again.")
-        if position == 0 and initial:
-            position = 1
-            db.add(LiveTransition(session_id=session_id, position=position, version=initial.version,
-                                  page=initial.page, total=initial.total, content=initial.content))
-        for offset, (page, total, content) in enumerate(snapshots):
-            version = f"{batch_id}:{offset}"
-            sequence = position + offset + 1
-            content = {**content, "sequence": sequence}
-            encoded = json.dumps(content, ensure_ascii=False)
-            db.add(LiveTransition(session_id=session_id, position=sequence,
-                                  page=page, total=total, version=version, content=encoded))
+            return _replayed_result([(item.position, item.version, item.page, item.total, item.content)
+                                     for item in previous], snapshots), False
+        _require_expected_version(initial.version if initial else None, expected_version)
+        state = None if initial is None else (initial.version, initial.page, initial.total, initial.content)
+        rows, slide = _plan_publish(batch_id, snapshots, position, state)
+        for sequence, version, page, total, content in rows:
+            db.add(LiveTransition(session_id=session_id, position=sequence, version=version,
+                                  page=page, total=total, content=content))
+        page, total, version, _, encoded = slide
         if initial is None:
             db.add(LiveSlide(session_id=session_id, page=page, total=total, version=version, content=encoded))
         else:
             initial.page, initial.total, initial.version, initial.content = page, total, version, encoded
         db.commit()
+    return _publish_response(slide), True
+
+
+@router.put("/sessions/{session_id}/live")
+def share_slide(session_id: str, data: ShareSlide, request: Request,
+                credentials: HTTPAuthorizationCredentials | None = Depends(scheme)):
+    started = time.perf_counter()
+    with LiveReadSession() as db:
+        current, material = _publisher(db, credentials, session_id)
+        _require_open(current.status)
+        db.expunge(material)
+    record_phase(request, "lookup", started)
+    started = time.perf_counter()
+    snapshots = [(page, *build_snapshot(material, page)) for page in (data.pages or [data.page])]
+    record_phase(request, "prepare", started)
+    last_page, _, last_content = snapshots[-1]
+    # Students fetch the page bytes from memory the moment they are notified.
+    prepared = prepare_shared_page(material, last_page, last_content.get("before"), last_content.get("after"))
+    started = time.perf_counter()
+    batch_id = data.batch_id or uid()
+    claims = decode_token(credentials)
+    write = _publish_pipelined if publish_engine.dialect.name == "postgresql" else _publish_orm
+    result, wrote = write(session_id, claims, batch_id, snapshots, data.expected_version)
     record_phase(request, "write", started)
-    _notify_published_page(session_id, material, last_page, prepared)
-    return {"page": page, "total": total, "version": version, **content}
+    if wrote:
+        _notify_published_page(session_id, material, last_page, prepared)
+    return result
 
 
 @router.get("/sessions/{session_id}/board")
