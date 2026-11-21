@@ -40,11 +40,16 @@ for(const html of [entry,teacher,student]){
  assert.doesNotMatch(html,/\sstyle=/,'CSP forbids inline style attributes');
  assert.doesNotMatch(html,/<script>(?!<\/script>)|<script(?![^>]*\bsrc=)[^>]*>/,'CSP forbids inline scripts');
 }
-for(const file of ['qu-api.js','qu-entry.js','qu-teacher.js','qu-student.js','qu-plant.js']){
+for(const file of ['qu-api.js','qu-entry.js','qu-teacher.js','qu-student.js','qu-plant.js','qu-live.js','qu-live-protocol.js']){
  const src=fs.readFileSync(path.join(root,'assets',file),'utf8');
  assert.doesNotMatch(src,/localStorage|sessionStorage|document\.cookie|indexedDB/,`${file} must keep tokens in memory only`);
  assert.doesNotMatch(src,/innerHTML|insertAdjacentHTML|eval\(|new Function/,`${file} must not inject HTML or code`);
  assert.doesNotMatch(src,/setAttribute\(\s*['"]style/,`${file} must not set style attributes (CSP)`);
+}
+for(const html of [teacher,student]){
+ const order=[...html.matchAll(/<script src="assets\/([^"]+)"/g)].map(m=>m[1]);
+ assert.ok(order.indexOf('qu-api.js')<order.indexOf('qu-live-protocol.js')&&order.indexOf('qu-live-protocol.js')<order.indexOf('qu-live.js'),
+  'qu-live-protocol.js must load after qu-api.js and before qu-live.js: '+order.join(', '));
 }
 const quApi=fs.readFileSync(path.join(root,'assets/qu-api.js'),'utf8');
 assert.match(quApi,/credentials: 'omit'/);
@@ -76,6 +81,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
 
 {
  const liveSource = fs.readFileSync(path.join(root,'assets/qu-live.js'),'utf8');
+ const protocolSource = fs.readFileSync(path.join(root,'assets/qu-live-protocol.js'),'utf8');
  const stubbed = liveSource.replace("import(pdfBase + 'build/pdf.min.mjs')", 'loadFixtureRenderer()');
  assert.notEqual(stubbed, liveSource);
  function node(tag, attrs = {}, ...children) {
@@ -182,6 +188,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
    },
   }),
  });
+ vm.runInContext(protocolSource,ctx);
  vm.runInContext(stubbed,ctx);
  const view = ctx.window.QU.createLiveView({api,session:'fixture',panel,
   initial:{status:'OPEN',slide:latest,index:[]},onState(){},onQuestion(){}});
@@ -265,6 +272,62 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   view.stop();
  }
  console.log('OK: live slide skips stale transitions and retries the latest page');
+}
+
+{
+ // Live protocol rules on their own: decoding, poll query and version decisions.
+ const ctx = vm.createContext({window:{QU:{el(){}}}, URLSearchParams, TextDecoder});
+ vm.runInContext(fs.readFileSync(path.join(root,'assets/qu-live-protocol.js'),'utf8'), ctx);
+ const P = ctx.window.QU.liveProtocol;
+ assert.ok(ctx.window.QU.el, 'protocol keeps existing QU members');
+ const plain = value => JSON.parse(JSON.stringify(value));
+
+ assert.ok(P.isLivePage('application/vnd.question-up.live-page'));
+ assert.ok(!P.isLivePage('application/json') && !P.isLivePage(null));
+ const meta = new TextEncoder().encode(JSON.stringify({status:'OPEN', slide:{page:3, version:'v3', sequence:4}}));
+ const pdf = new TextEncoder().encode('%PDF-1.7 page');
+ const frame = new Uint8Array(4 + meta.length + pdf.length);
+ new DataView(frame.buffer).setUint32(0, meta.length);
+ frame.set(meta, 4); frame.set(pdf, 4 + meta.length);
+ const decoded = P.decodeLiveFrame(frame.buffer);
+ assert.deepEqual(plain({status:decoded.status, slide:decoded.slide}), {status:'OPEN', slide:{page:3, version:'v3', sequence:4}});
+ assert.equal(new TextDecoder().decode(decoded.inlinePdf), '%PDF-1.7 page');
+ assert.throws(() => P.decodeLiveFrame(frame.buffer.slice(0, 4 + meta.length)), /Incomplete/, 'metadata without a page');
+ assert.throws(() => P.decodeLiveFrame(new ArrayBuffer(2)), /Incomplete/, 'truncated length prefix');
+
+ const query = text => Object.fromEntries(new URLSearchParams(text));
+ assert.deepEqual(query(P.pollQuery({})), {version:''});
+ assert.deepEqual(query(P.pollQuery({version:'v1', stamp:'r1', indexVersion:'i1', inline:true})),
+  {version:'v1', after:'r1', index_version:'i1', inline_page:'true', partial_page:'true'});
+ assert.deepEqual(query(P.pollQuery({version:'v1', stamp:'', inline:false})), {version:'v1', after:''});
+
+ const s = (version, sequence) => ({version, sequence, page:sequence});
+ let r = P.applyUpdate({slide:s('a',2), confirmed:s('a',2)}, {revision:'r9', slide:s('b',3)});
+ assert.deepEqual(plain(r), {stamp:'r9', delay:0, stale:false, confirmed:s('b',3), changed:true});
+ r = P.applyUpdate({slide:s('b',3), confirmed:s('b',3)}, {revision:'r9', slide:s('a',2)});
+ assert.equal(r.stale, true, 'an older sequence never replaces the slide on screen');
+ assert.deepEqual(plain(r.confirmed), s('b',3));
+ r = P.applyUpdate({slide:s('a',2), confirmed:s('a',2)}, {partial:true, revision:'r9', slide:s('b',3)});
+ assert.deepEqual([r.stamp, r.delay, r.changed], [undefined, 0, true], 'partial responses poll again at once without a stamp');
+ r = P.applyUpdate({slide:s('a',2), confirmed:s('c',5)}, {slide:s('b',3)});
+ assert.deepEqual([r.stamp, r.delay, r.stale, r.changed], [undefined, 2000, false, true]);
+ assert.deepEqual(plain(r.confirmed), s('c',5), 'a newer confirmed publish is kept');
+ r = P.applyUpdate({slide:s('a',2), confirmed:s('a',2)}, {revision:'r1', slide:s('a',2)});
+ assert.equal(r.changed, false);
+ r = P.applyUpdate({slide:s('a',2), confirmed:s('a',2)}, {revision:'r1', status:'CLOSED', slide:null});
+ assert.deepEqual([r.stale, r.changed], [false, true], 'closing clears the slide');
+ assert.deepEqual(plain(P.applyUpdate({slide:null, confirmed:null}, {revision:'r1', slide:{version:'x'}}).confirmed), {version:'x'});
+
+ assert.ok(P.acceptsAcknowledgement(s('a',3), s('b',3)) && P.acceptsAcknowledgement(null, {}));
+ assert.ok(!P.acceptsAcknowledgement(s('a',4), s('b',3)));
+
+ const n = args => P.neighborPage({visiblePages:[], navigation:null, pageCount:5, ...args});
+ assert.equal(n({visiblePages:[1,3,4], current:3, delta:1}), 4);
+ assert.equal(n({visiblePages:[1,3,4], current:1, delta:-1}), undefined);
+ assert.equal(n({navigation:{page:3, pdf:true, before:1, after:4}, current:3, delta:-1}), 1);
+ assert.equal(n({navigation:{page:3, pdf:true, before:1, after:4}, current:2, delta:1}), 3);
+ assert.equal(n({current:5, delta:1}), null);
+ console.log('OK: live protocol decodes frames, builds poll queries and orders slide versions');
 }
 
 {
