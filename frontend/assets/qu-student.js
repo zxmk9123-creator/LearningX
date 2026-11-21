@@ -44,15 +44,15 @@
   };
   const RANK = { seed: 0, shallow: 1, mid: 2, deep: 3 };
   const TEMPLATES = {
-    shallow: { next: '중간 질문으로 자라기', items: [
-      ['비교', '___와 ___는 무엇이 다른가요?'],
-      ['정의', '___를 한 문장으로 정의하면 무엇인가요?'],
-      ['이유', '___는 왜 중요한가요?'],
+    shallow: { next: '중간 질문 연습 · 적용과 분석', items: [
+      ['비교', '교안에서 다룬 ___와 ___를 ___ 기준으로 비교하면 어떤 차이가 있나요?'],
+      ['사례 설명', '교안의 ___ 개념으로 ___ 사례를 설명하면 어떤 점이 드러나나요?'],
+      ['원인 분석', '교안의 ___ 사례에서 ___는 어떤 조건에서 나타나나요?'],
     ] },
-    mid: { next: '깊은 질문으로 자라기', items: [
-      ['적용', '___를 ___ 상황에 적용하면 어떻게 되나요?'],
-      ['원인', '왜 ___에서 ___가 생길까요?'],
-      ['평가', '___라고 볼 수 있는 근거는 무엇인가요?'],
+    mid: { next: '깊은 질문 연습 · 평가와 설계', items: [
+      ['기준으로 평가', '교안에서 다룬 ___를 ___ 기준으로 평가할 때 어떤 한계를 고려해야 하나요?'],
+      ['근거 비교', '교안의 ___와 ___ 중 어느 근거가 ___ 주장을 더 잘 뒷받침하며, 그 판단 기준은 무엇인가요?'],
+      ['조건 설계', '교안의 ___ 개념을 검증할 실험을 설계한다면, ___ 조건을 어떻게 바꾸고 무엇을 일정하게 유지해야 하나요?'],
     ] },
   };
   const BLANK = /_{2,}/;
@@ -488,7 +488,7 @@
     const open = st.session && st.session.status === 'OPEN';
     const hasBlank = BLANK.test(v);
     $('send').disabled = !open || st.sending || batchSending || !v || hasBlank;
-    $('hint').textContent = hasBlank ? '빈칸(___)이 아직 남아 있어요. 내 생각으로 채워 주세요'
+    $('hint').textContent = hasBlank ? '빈칸(___)에 교안의 개념이나 수업에서 다룬 사례·근거를 넣어 주세요'
       : st.current ? '고친 질문을 보내면 다시 코칭해 드려요' : '다른 학생에게는 내 이름이 보이지 않아요';
     $('send-now').hidden = !st.current || !open || batchSupported;
     updateBatchButton();
@@ -616,6 +616,7 @@
     if (guide) {
       $('thread').append(el('div', { class: 'opts' },
         el('span', { class: 'k', text: `↑ ${guide.next}` }),
+        el('span', {class: 'muted', text: '빈칸에 교안의 개념, 수업 사례, 판단 기준이나 근거를 넣어 보세요.'}),
         ...guide.items.map(([k, tpl]) => el('button', { class: 'opt', type: 'button', onclick: () => {
           if (draft) {
             const latest = drafts.get(draft.id);

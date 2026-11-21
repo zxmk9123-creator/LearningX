@@ -36,34 +36,34 @@
   <div class="wrap">
     <div class="sec-head">
       <div><span class="eyebrow">질문 수준</span><h2>질문에도 깊이가 있습니다</h2></div>
-      <p>그레이서·퍼슨의 질문 분류와 블룸의 개정 분류학을 기준으로, ‘적용하기’ 이상의 질문을 목표로 합니다.</p>
+      <p>질문이 어떤 사고를 요구하는지에 따라 수준을 살펴봅니다.</p>
     </div>
     <div class="ladder">
       <div class="card">
-        <div class="lv"><span class="tag">얕은 질문</span><div><b>사실을 확인하는 질문</b><span class="eg">“OO 이론은 누가 만들었나요?”</span></div></div>
-        <div class="lv"><span class="tag">중간 질문</span><div><b>정의·비교를 묻는 질문</b><span class="eg">“A와 B의 차이는 무엇인가요?”</span></div></div>
-        <div class="lv"><span class="tag deep">깊은 질문</span><div><b>원인·결과·판단을 묻는 질문</b><span class="eg">“이 이론을 오늘날 SNS에 적용하면 어떻게 되나요?”</span></div></div>
-        <p class="levels-note">AI는 질문의 수준을 알려 주고 다음 단계의 줄기만 제안합니다. 완성된 질문은 학생이 씁니다.</p>
+        <div class="lv"><span class="tag">얕은 질문</span><div><b>개념이나 개념의 범위를 확인하는 질문</b><span class="eg">“의제설정에서 말하는 관심은 태도 변화까지 포함하나요?”</span></div></div>
+        <div class="lv"><span class="tag">중간 질문</span><div><b>사례에 적용하거나 비교·분석하는 질문</b><span class="eg">“이 이론을 SNS 추천 사례에 적용하면 어떤 차이가 나타나나요?”</span></div></div>
+        <div class="lv"><span class="tag deep">깊은 질문</span><div><b>기준으로 판단하거나 검증 방법을 설계하는 질문</b><span class="eg">“노출 빈도와 관심도 중 어느 지표가 의제설정 효과를 더 잘 보여주며, 어떤 기준으로 판단하나요?”</span></div></div>
+        <p class="levels-note">질문 수준은 완성한 질문이 요구하는 사고를 기준으로 판단합니다.</p>
       </div>
 
       <div class="card coach" aria-label="질문 코치 예시">
         <div class="bar"><span class="live">미디어와 사회 · 3주차</span><span>예시 화면</span></div>
         <div class="body">
-          <div class="bubble me"><small>내 질문 · 익명</small>의제설정 이론은 누가 만들었나요?</div>
+          <div class="bubble me"><small>내 질문 · 익명</small>의제설정에서 말하는 관심은 태도 변화까지 포함하나요?</div>
           <div class="bubble ai">
             <small>질문 코치 · 얕은 질문</small>
-            <p>사실을 확인하는 질문이에요. 교안에서 답을 찾을 수 있어요. 한 단계 더 나아가 볼까요? 아래 줄기 중 하나를 골라 <b>직접</b> 질문을 써 보세요.</p>
+            <p>개념의 범위를 확인하는 질문이에요. 수업에서 다룬 사례에 적용하거나 다른 개념과 비교해 볼까요?</p>
             <button class="cite" type="button" aria-expanded="false" aria-controls="cite-pop">교안 p.3 · 교수자 승인됨</button>
-            <div class="cite-pop" id="cite-pop" hidden>예시 화면(실제 승인 서명 없음) · <b>교안 p.3</b> “의제설정 이론은 매콤스와 쇼(1972)가 제안했다.” 교수자가 학생 코칭 근거로 승인한 쪽만 인용됩니다.</div>
+            <div class="cite-pop" id="cite-pop" hidden>예시 화면(실제 승인 서명 없음) · <b>교안 p.3</b> “의제설정은 어떤 이슈에 관심을 기울이는지와 관련된다.” 교수자가 학생 코칭 근거로 승인한 쪽만 인용됩니다.</div>
           </div>
           <span class="stems-label" id="stems-label">다음 단계 줄기</span>
           <div class="stems" role="group" aria-labelledby="stems-label">
             <button class="stem" type="button" aria-pressed="false" data-t="의제설정 이론을 ___ 상황에 적용하면 어떻게 되나요?"><b>적용하기</b> · ___를 ___ 상황에 적용하면?</button>
-            <button class="stem" type="button" aria-pressed="false" data-t="의제설정 이론과 ___의 차이는 어디서 생기나요?"><b>분석하기</b> · ___와 ___의 차이는 어디서?</button>
-            <button class="stem" type="button" aria-pressed="false" data-t="오늘날에도 ___라고 볼 수 있는 근거는 무엇인가요?"><b>평가하기</b> · ___라고 볼 수 있는 근거는?</button>
+            <button class="stem" type="button" aria-pressed="false" data-t="의제설정 이론과 ___의 차이는 어디서 생기나요?"><b>분석하기</b> · 교안의 개념과 사례 비교</button>
+            <button class="stem" type="button" aria-pressed="false" data-t="교안의 ___ 사례에서는 ___가 어떤 조건에서 나타나나요?"><b>원인 분석</b> · 사례에서 조건 찾기</button>
           </div>
           <form class="compose" id="compose" hidden novalidate>
-            <label class="field-label" for="q2">빈칸(___)을 내 생각으로 채워 질문을 완성하세요</label>
+            <label class="field-label" for="q2">빈칸(___)에 교안의 개념이나 수업 사례를 넣어 주세요</label>
             <textarea id="q2" maxlength="200" aria-describedby="q2-err q2-count"></textarea>
             <p class="err" id="q2-err" aria-live="polite"></p>
             <div class="row"><span class="count" id="q2-count">0 / 200</span><button class="btn sm" type="submit">질문 제출</button></div>
