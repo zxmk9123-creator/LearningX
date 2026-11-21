@@ -30,12 +30,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .storage import Base, uid
 
 POLICY_VERSION = "suitability-v1"
+REJECTION_MESSAGE = "반응만 적기보다 수업에서 궁금하거나 더 알아보고 싶은 내용을 적어 주세요."
 STATUSES = ("pending", "eligible", "needs_revision")
 MODEL_REASONS = ("off_topic", "targeted_attack", "personal_or_private", "disruption",
-                 "dismissive_mockery", "reaction_only", "context_needed")
+                 "dismissive_mockery", "reaction_only", "context_needed",
+                 "confession", "student_reference", "information_only")
 # What the student should fix first.
 PRIORITY = ("personal_or_private", "targeted_attack", "dismissive_mockery", "disruption",
-            "reaction_only", "off_topic", "context_needed", "check_unavailable")
+            "reaction_only", "confession", "student_reference", "off_topic", "information_only",
+            "context_needed", "check_unavailable")
 MAX_ATTEMPTS = 3
 LEASE_SECONDS = 60
 RETRY_BACKOFF_SECONDS = (0, 5, 20)
@@ -152,7 +155,7 @@ _REQUEST_PREFACE = re.compile(
     r"그냥\s*궁금한데[,\s]*)"
 )
 _NOISE = re.compile(r"^[ㅋㅎㅠㅜᄏ휴ᅮ!?.,…~\s]+$")
-_REACTION_ONLY = re.compile(r"(?:야[르레]+|아자+|와우+|오예+|응\s*아니야|ᄋᄌ|ᄅᄋ|ᄋᄋ)(?:[!?.,…~\sㅋㅎᄏᄒ]*)")
+_REACTION_ONLY = re.compile(r"(?:와|헐|오|대박|ㅇㅇ|야[르레]+|아자+|와우+|오예+|응\s*아니야|ᄋᄌ|ᄅᄋ|ᄋᄋ)(?:[!?.,…~\sㅋㅎᄏᄒ]*)")
 _DISMISSIVE_MOCKERY = re.compile(
     r"(?:(?:교수님|선생님|조교님)(?:의)?[,\s]*)?"
     r"(?:이|오늘|이번)?\s*(?:수업|강의|설명|교안)(?:은|는|이|가)?\s*"
@@ -162,6 +165,39 @@ _DISMISSIVE_MOCKERY = re.compile(
 )
 _PROMO_REQUEST = re.compile(
     r"(?:제|저희)\s*(?:채널|유튜브|쇼핑몰|오픈\s*채팅방)(?:을|에|에서)?\s*(?:구독|가입|구매)\s*(?:해\s*주세요|하세요|해\s*줘)"
+)
+
+_CONFESSION = re.compile(
+    r"(?:^(?:저는\s*)?(?:좋아합니다|좋아해요|좋아해)|(?:교수님|선생님|조교님|너)(?:을|를)?[,\s]*(?:정말\s*|진짜\s*|많이\s*)?(?:좋아합니다|좋아해요|좋아해)|사랑합니다|사랑해요|사랑해|사귀고\s*싶어요|사귀어\s*주세요|"
+    r"사귈래요|고백할게요|고백합니다|마음이\s*있어요|반했어요|좋아한다는\s*걸\s*말하고\s*싶어요)"
+    r"(?=$|[.!?…~\s💗❤])"
+)
+_STUDENT_REFERENCE = re.compile(
+    r"(?:옆자리|앞자리|뒷자리|같은\s*(?:반|조|팀)|우리\s*(?:반|조|팀)|다른|어떤|저|그)"
+    r"\s*(?:(?:남|여)?학생|친구|조원|팀원|수강생|애)(?:은|는|이|가|도|의|한테|에게|을|를|요)?"
+    r"(?=$|[\s,.!?…])|(?:옆자리|앞자리|뒷자리)(?:에\s*(?:앉은|있는))?\s*(?:그\s*)?(?:분|사람|학생|친구|애)|"
+    r"(?:[가-힣]{2,4}\s*(?:학생|학우|수강생)|[가-힣]{2,4}\s*씨)"
+    r"(?:은|는|이|가|도|의|한테|에게|을|를)(?=$|\s)"
+)
+_CONTEXT_ONLY = re.compile(
+    r"(?:그건|이건|저건|그게|이게|저게|그거|이거|저거|그건요|그것은|이것은|그렇게|이렇게|왜요|왜|어떻게)"
+    r"(?:\s*(?:왜|어떻게|갑자기|그렇게|이렇게|되는|된|되는지|뭔|무슨|무엇|무슨\s*뜻|"
+    r"그래요|그런가요|그런데요|되나요|돼요|되는\s*거예요|된\s*거예요|되는\s*건가요|"
+    r"되죠|하나요|해요|인가요|이에요|예요|인가|인가요|뭐예요|뭔가요|뭔데요|모르겠어요|설명해\s*주세요|설명해\s*줘요?))*"
+)
+_FACT_LOOKUP = re.compile(
+    r"(?:누구(?:예요|인가요|야|죠)|몇\s*(?:년|월|일|살|명|개)(?:인가요|이에요|예요|이죠)|"
+    r"언제(?:예요|인가요|였나요|죠|였죠)|얼마(?:예요|인가요|죠)|어디(?:예요|인가요|죠|에\s*있나요)|"
+    r"(?:정의|뜻|약자|풀네임|정답|수도|생년월일|출생지)(?:가|는|은|이|을|를)?\s*"
+    r"(?:뭔가요|뭐예요|무엇인가요|어디인가요|알려\s*(?:주세요|줘요?))|"
+    r"(?:[가-힣a-zA-Z0-9]+란|[가-힣a-zA-Z0-9]+이란)\s*(?:뭐예요|뭔가요|무엇인가요)|"
+    r"(?:오늘\s*날씨|현재\s*기온|실시간\s*환율|주가)(?:가|는|을|를)?\s*"
+    r"(?:알려\s*(?:주세요|줘요?)|어때요|어떤가요)|"
+    r"(?:검색|조회|찾아)\s*(?:해\s*)?(?:주세요|줘요?))$"
+)
+_CLASS_LOGISTICS = re.compile(
+    r"(?:수업|강의|시험|과제|발표|제출|마감|휴강|출석|교안|공지|다음\s*시간).*"
+    r"(?:일정|시간|날짜|기간|분량|범위|마감|제출|장소|강의실|페이지|몇\s*(?:쪽|시|일)|언제)"
 )
 
 
@@ -192,7 +228,7 @@ def expression_reason(text: str) -> str | None:
     return None
 
 
-def rule_reasons(text: str, recent_texts=()) -> list[str]:
+def rule_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     """Only verifiable patterns. A slur list or failed evidence search never decides here."""
     text = _visible_text(text).strip()
     reasons = []
@@ -203,6 +239,15 @@ def rule_reasons(text: str, recent_texts=()) -> list[str]:
     if (_PROMO_LINK.search(text) or (_URL.search(text) and _PROMO_WORD.search(text))
             or _PROMO_REQUEST.search(text) or _NOISE.fullmatch(text)):
         reasons.append("disruption")
+    plain = _QUOTED_EXAMPLE.sub(" ", text).strip().rstrip(".!?…~ ")
+    if _CONFESSION.search(plain):
+        reasons.append("confession")
+    if _STUDENT_REFERENCE.search(plain):
+        reasons.append("student_reference")
+    if not anchored and _CONTEXT_ONLY.fullmatch(plain):
+        reasons.append("context_needed")
+    if _FACT_LOOKUP.search(plain) and not _CLASS_LOGISTICS.search(plain):
+        reasons.append("information_only")
     if reason := expression_reason(text):
         reasons.append(reason)
     key = normalize(text)
@@ -228,6 +273,9 @@ SYSTEM = """당신은 수업 중 학생 질문이 교수자에게 전달하기�
 - dismissive_mockery: 질문이나 구체적 개선 요청 없이 수업·교안·설명을 조롱으로 깎아내리는 발화. 수업 속도, 설명 방식, 난이도에 대한 구체적인 피드백은 관련 있음으로 봅니다.
 - reaction_only: 추임새·밈·웃음으로만 이루어져 전달할 질문이나 피드백이 없는 발화. 웃음 표현 뒤에 의미 있는 질문이 이어지면 해당하지 않습니다.
 - disruption: 광고 또는 같은 내용을 반복해 진행을 방해하는 경우. 정당한 후속 질문과 수정은 해당하지 않습니다.
+- confession: 교수자나 타인에게 보내는 고백, 호감 표현, 교제 요청. 작품이나 이론 속 표현을 분석하는 학습 질문은 해당하지 않습니다.
+- student_reference: 실제 수강생이나 같은 반·조의 학생을 개인 또는 현재 수업의 집단으로 지칭하는 질문. 일반적인 학생 집단을 연구 개념이나 가상 사례로 논의하는 것은 허용합니다.
+- information_only: 검색 또는 단순 조회로 끝나는 사실, 신상, 정답, 용어 정의 요청. 수업 운영 확인과 개념을 이해·비교·적용하려는 질문은 허용합니다.
 - context_needed: 연결 단서를 덧붙이면 판정할 수 있는 모호한 질문. 질문 유형·길이·문법·깊이는 근거가 아닙니다.
 예: "선생님 집 주소를 알려주세요"는 personal_or_private, "그 설명에는 반례가 있지 않나요?"는 eligible입니다.
 "오늘 저녁 메뉴 대신 골라 줘"처럼 수업이 요구하는 활동과 무관한 개인적 심부름은 off_topic입니다.
@@ -267,14 +315,14 @@ def public(check: "SuitabilityCheck | None") -> dict | None:
             "checked_at": check.checked_at.isoformat() if check.checked_at else None}
 
 
-def effective_check(text: str, check: "SuitabilityCheck | None", policy_version: str) -> dict:
+def effective_check(text: str, check: "SuitabilityCheck | None", policy_version: str, *, anchored=False) -> dict:
     """Combine the saved decision with deterministic rules for the current text.
 
     Repetition is evaluated when a revision is checked: later submissions can
     change its reference set and must not retroactively alter earlier drafts.
     """
     state = public(check) or legacy_pending(policy_version)
-    reasons = rule_reasons(text)
+    reasons = rule_reasons(text, anchored=anchored)
     if not reasons:
         return state
     codes = ordered([*reasons, *(code for code in state["reason_codes"] if code != "check_unavailable")])
@@ -316,6 +364,9 @@ def drafts_for(db, rows, policy_version):
     ids = [r.id for r in rows]
     if not ids:
         return {}
+    from .classroom import QuestionAnchor
+    anchors = {a.question_id for a in db.query(QuestionAnchor).filter(QuestionAnchor.question_id.in_(ids))
+               if has_quote(a)}
     heads = {h.session_question_id: h.revision_id
              for h in db.query(QuestionHead).filter(QuestionHead.session_question_id.in_(ids))}
     checks = {(c.session_question_id, c.revision_id): c for c in db.query(SuitabilityCheck)
@@ -328,8 +379,17 @@ def drafts_for(db, rows, policy_version):
             out[row.id] = (revision, public(check))
         else:
             out[row.id] = (revision or legacy_revision(row.id),
-                           effective_check(row.latest_text, check, policy_version))
+                           effective_check(row.latest_text, check, policy_version, anchored=row.id in anchors))
     return out
+
+
+def has_quote(anchor):
+    return bool(anchor and json.loads(anchor.location).get("quote", "").strip())
+
+
+def has_anchor(db, row_id):
+    from .classroom import QuestionAnchor
+    return has_quote(db.get(QuestionAnchor, row_id))
 
 
 def _recent_texts(db, row, session_id):
@@ -382,7 +442,7 @@ def evaluate(db, row, session, check, text) -> bool:
     check.attempt_id = uid()
     check.attempts = 0
     check.lease_until = None
-    reasons = rule_reasons(text, _recent_texts(db, row, session.id))
+    reasons = rule_reasons(text, _recent_texts(db, row, session.id), anchored=has_anchor(db, row.id))
     model = uses_model(db, session)
     request_topic = _personal_request_topic(_visible_text(text).strip()) if not model else None
     if request_topic:

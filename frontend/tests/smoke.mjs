@@ -611,10 +611,18 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   return elements.get(id);
  };
  const requests = [];
+ const coaching = [];
+ const replies = [];
  const ctx = vm.createContext({$, el, token: 'test', document: {}, clearTimeout(){}, setTimeout(){},
   st: {session: {id:'class', status:'OPEN'}, sentCount:0}, crypto: {randomUUID: () => 'batch-id'},
-  updateComposer(){}, coachMsg(){},
+  updateComposer(){}, coachMsg(...parts){ replies.push(parts); },
+  renderCoaching(...parts){ coaching.push(parts); },
   api: async (path, options) => {
+   if (path.endsWith('/mine')) return {
+    suitability: {policy_version: 'test'}, items: [
+     {id: 'd', revision_id: 'rev-d', suitability: {status: 'needs_revision'}},
+    ],
+   };
    requests.push({path, ...options});
    if (requests.length === 1) throw new Error('network error');
    return {submitted: options.body.items};
@@ -627,7 +635,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
    }
    paintDrafts();`, ctx);
  const boxes = () => $('question-options').kids.map(card => card.kids[0].kids[0]);
- assert.deepEqual(Array.from(boxes(), box => box.disabled), [false, false, true, true]);
+ assert.deepEqual(Array.from(boxes(), box => box.disabled), [false, false]);
  for (const box of boxes().slice(0,2)) box.attrs.onchange({target:{checked:true}});
  assert.equal($('question-batch-send').textContent, '선택한 질문 보내기');
  $('question-edit').click();
@@ -638,9 +646,17 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.equal(requests[0].path, '/v1/sessions/class/questions/submit-batch');
  assert.equal(JSON.stringify(requests[0].body), JSON.stringify(requests[1].body));
  assert.deepEqual(Array.from(requests[1].body.items, item => item.revision_id), ['rev-a','rev-b']);
- assert.deepEqual(Array.from(boxes(), box => box.attrs.id), ['pick-c','pick-d']);
+ assert.deepEqual(Array.from(boxes(), box => box.attrs.id), []);
  assert.equal(ctx.st.sentCount, 2);
- console.log('OK: eligible drafts submit together, blocked drafts stay disabled, and network retries retain the batch ID');
+ replies.length = 0;
+ await ctx.refreshDrafts();
+ assert.equal($('question-options').kids.length, 0);
+ assert.deepEqual(coaching, []);
+ assert.equal(replies.length, 1);
+ assert.equal(replies[0][0].attrs.text, '반응만 적기보다 수업에서 궁금하거나 더 알아보고 싶은 내용을 적어 주세요.');
+ await ctx.refreshDrafts();
+ assert.equal(replies.length, 1, 'a subsequent poll does not repeat the rejection');
+ console.log('OK: eligible drafts submit together, blocked and pending drafts stay out of the list, and network retries retain the batch ID');
 }
 
 {
@@ -656,16 +672,20 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  };
  const requests = [];
  const drafts = new Map();
+ const outcomes = [];
  const ctx = vm.createContext({
   $, drafts, token: 'test', st: {session: {id: 'class'}}, questionAnchor: null,
   liveView: null, pendingAsk: null, draftRead: 0, batchSupported: true, selected: new Map(),
   crypto: {randomUUID: () => String(requests.length)}, updateComposer(){}, paintDrafts(){},
-  meMsg(){}, scrollThread(){}, renderCoaching(){}, scheduleDraftPoll(){}, coachMsg(){}, WARNINGS: {},
+  meMsg(){}, scrollThread(){}, renderCoaching(){}, scheduleDraftPoll(){}, coachMsg(){},
+  showDraftOutcome(draft){ outcomes.push(draft); },
   el: () => ({remove(){}}),
   api: async (url, options) => {
    requests.push({url, options});
    const id = url.includes('/revisions') ? 'q1' : 'q' + requests.length;
-   return {id, level: 'mid', revision_id: 'rev' + requests.length, suitability: {status: 'eligible'}};
+   const text = options.body.question ?? options.body.text;
+   const status = text === '차단 예시' ? 'needs_revision' : 'eligible';
+   return {id, level: 'mid', revision_id: 'rev' + requests.length, suitability: {status}};
   },
  });
  $('thread').append = () => {};
@@ -688,5 +708,8 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.deepEqual([...drafts.keys()], ['q1', 'q2'], 'editing keeps the original position');
  assert.equal(drafts.get('q2').text, '두 번째 질문도 저장합니다.');
  assert.equal(ctx.st.current, null, 'the next entry starts a new draft after a revision');
+ await submit('차단 예시');
+ assert.deepEqual([...drafts.keys()], ['q1', 'q2']);
+ assert.equal(outcomes.at(-1).suitability.status, 'needs_revision');
  console.log('OK: the card starts collapsed, new questions accumulate, and a revision changes only one draft');
 }

@@ -162,22 +162,12 @@
   /* ---------- 교수자에게 보낼 질문 ---------- */
   const DRAFT_LIMIT = 20;
   const EDIT_MULTIPLE_WARNING = '다듬기는 한 번에 하나만 가능해요. 질문을 하나만 선택해 주세요.';
-  const WARNINGS = {
-    off_topic: '수업 내용과 어떻게 연결되는지 질문에 적어 주세요.',
-    targeted_attack: '사람을 비난하는 표현을 빼고 수업 내용에 초점을 맞춰 주세요.',
-    personal_or_private: '개인 신상이나 사적인 정보를 빼고 질문을 다시 써 주세요.',
-    dismissive_mockery: '어느 설명이 어려웠는지, 어떤 예시가 도움이 될지 구체적으로 적어 주세요.',
-    reaction_only: '반응만 적기보다 수업에서 궁금하거나 더 알아보고 싶은 내용을 적어 주세요.',
-    disruption: '광고나 반복 입력을 빼고, 아직 궁금한 수업 내용을 구체적으로 적어 주세요.',
-    context_needed: '어떤 개념이나 교안 부분에 관한 질문인지 적어 주세요.',
-    check_unavailable: '질문을 확인하지 못했어요. 확인을 다시 요청해 주세요.',
-  };
+  const REJECTION_MESSAGE = '반응만 적기보다 수업에서 궁금하거나 더 알아보고 싶은 내용을 적어 주세요.';
   const drafts = new Map();
   const selected = new Map();
   const checking = new Set();
   const requestedLegacyChecks = new Set();
   let batchSupported = false;
-  let reviewTarget = null;
   let batchSending = false;
   let pendingBatch = null;
   let pendingAsk = null;
@@ -197,59 +187,37 @@
   }
 
   function paintDrafts() {
-    $('question-selection').hidden = !batchSupported || !drafts.size;
-    $('question-count').textContent = `${drafts.size}개`;
-    if (!drafts.size) $('question-disclosure').open = false;
+    const visible = [...drafts.values()].filter(draft => draft.suitability?.status === 'eligible');
+    for (const [id, revision] of selected) {
+      const draft = drafts.get(id);
+      if (!draft || !selectable(draft) || draft.revision_id !== revision) selected.delete(id);
+    }
+    $('question-selection').hidden = !batchSupported || !visible.length;
+    $('question-count').textContent = `${visible.length}개`;
+    if (!visible.length) $('question-disclosure').open = false;
     const list = $('question-options');
     const focused = list.contains(document.activeElement) ? document.activeElement.id : '';
     const scrollTop = list.scrollTop;
-    const cards = [...drafts.values()].map(draft => {
-      const {id, revision_id, suitability} = draft;
-      const status = suitability?.status;
-      if (!selectable(draft) || selected.get(id) !== revision_id) selected.delete(id);
-      const message = WARNINGS[suitability?.primary_reason] ||
-        (status === 'eligible' ? (suitability.mode === 'rules' ? '기본 규칙을 통과했어요 · 문맥 검사는 사용하지 않아요.' : '보낼 수 있어요') : status === 'needs_revision' ? '질문을 다시 다듬어 주세요.'
-          : revision_id?.startsWith('legacy-') && !requestedLegacyChecks.has(id) ? '다시 확인을 눌러 질문을 확인해 주세요.'
-            : '질문 적합성을 확인하는 중이에요.');
+    const cards = visible.map(draft => {
+      const {id, revision_id} = draft;
       const checkbox = el('input', {
         id: 'pick-' + id, type: 'checkbox', checked: selected.has(id),
         disabled: !selectable(draft) || batchSending,
-        'aria-describedby': 'check-' + id,
         'aria-label': '보낼 질문 선택: ' + draft.text,
         onchange: event => {
           if (event.target.checked && selected.size >= DRAFT_LIMIT) {
             event.target.checked = false;
             $('question-batch-status').textContent = '한 번에 20개까지 보낼 수 있어요.';
           } else {
-            if (event.target.checked) {
-              selected.set(id, revision_id);
-              reviewTarget = null;
-            }
+            if (event.target.checked) selected.set(id, revision_id);
             else selected.delete(id);
             $('question-batch-status').textContent = '';
           }
           updateBatchButton();
         },
       });
-      const pending = status !== 'eligible' && status !== 'needs_revision';
-      const text = selectable(draft) ? el('span', {text: draft.text}) : el('button', {
-        id: 'review-' + id, class: 'linkbtn question-review-target', type: 'button', text: draft.text,
-        disabled: !openForQuestions() || st.sending || batchSending,
-        'aria-label': '수정 대상으로 지정: ' + draft.text,
-        'aria-pressed': reviewTarget === id && !selected.size ? 'true' : 'false',
-        onclick: () => {
-          selected.clear();
-          reviewTarget = id;
-          $('question-batch-status').textContent = '수정할 질문을 지정했어요. 다듬기 버튼을 누르세요.';
-          paintDrafts();
-        },
-      });
-      return el('div', { class: 'question-option' },
-        el(selectable(draft) ? 'label' : 'div', {class: 'row'}, checkbox, text),
-        el('p', { id: 'check-' + id, class: status === 'needs_revision' ? 'error' : 'muted', text: message }),
-        el('div', { class: 'row' },
-          pending ? el('button', {id: 'retry-' + id, class: 'btn sm', type: 'button', text: '다시 확인',
-            disabled: !openForQuestions() || !revision_id || checking.has(id) || batchSending, onclick: () => retryDraft(draft)}) : null));
+      return el('div', {class: 'question-option'},
+        el('label', {class: 'row'}, checkbox, el('span', {text: draft.text})));
     });
     list.replaceChildren(...cards);
     list.scrollTop = scrollTop;
@@ -296,14 +264,17 @@
       for (const draft of unsent) {
         const previous = drafts.get(draft.id);
         if (previous?.revision_id === draft.revision_id && previous.suitability?.status === 'pending' &&
-            draft.suitability?.status === 'needs_revision') {
-          coachMsg(el('span', {class: 'error', text: WARNINGS[draft.suitability.primary_reason] ||
-            '보낼 질문 목록에서 수정이 필요한 질문을 확인해 주세요.'}));
+            (draft.suitability?.status !== 'pending' ||
+             previous.suitability.primary_reason !== draft.suitability.primary_reason)) {
+          showDraftOutcome(draft);
+        } else if (!previous && draft.suitability?.status === 'pending' &&
+                   (draft.revision_id?.startsWith('legacy-') ||
+                    draft.suitability.primary_reason === 'check_unavailable')) {
+          showDraftRetry(draft);
         }
       }
       drafts.clear();
-      for (const draft of unsent) drafts.set(draft.id, draft);
-      for (const id of selected.keys()) if (!drafts.has(id)) selected.delete(id);
+      for (const draft of unsent) if (draft.suitability?.status !== 'needs_revision') drafts.set(draft.id, draft);
       st.sentCount = data.items.length - unsent.length;
       updateComposer();
       paintDrafts();
@@ -311,9 +282,31 @@
     finally { if (token === access && read === draftRead) scheduleDraftPoll(); }
   }
 
+  function showDraftRetry(draft) {
+    coachMsg(el('span', {text: '질문 적합성을 다시 확인해 주세요.'}),
+      el('button', {class: 'btn sm', type: 'button', text: '다시 확인', onclick: event => {
+        const latest = drafts.get(draft.id);
+        if (latest?.revision_id !== draft.revision_id || latest.suitability?.status !== 'pending') return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        retryDraft(latest).finally(() => { button.disabled = false; });
+      }}));
+  }
+
+  function showDraftOutcome(draft) {
+    if (draft.suitability?.status === 'needs_revision') {
+      coachMsg(el('span', {text: REJECTION_MESSAGE}));
+    } else if (draft.suitability?.status === 'eligible') {
+      renderCoaching(draft.level, draft.coaching, draft);
+    } else if (draft.suitability?.primary_reason === 'check_unavailable') {
+      showDraftRetry(draft);
+    }
+  }
+
   async function retryDraft(draft) {
     const access = token;
     const {id, revision_id} = draft;
+    if (checking.has(id) || !openForQuestions()) return;
     checking.add(id);
     if (revision_id.startsWith('legacy-')) requestedLegacyChecks.add(id);
     paintDrafts();
@@ -322,7 +315,7 @@
     } catch (err) {
       if (token === access) {
         requestedLegacyChecks.delete(id);
-        $('question-batch-status').textContent = err.message;
+        coachMsg(el('span', {text: err.message}));
       }
     } finally {
       if (token === access) {
@@ -335,7 +328,7 @@
 
   $('question-new').addEventListener('click', () => editDraft());
   $('question-edit').addEventListener('click', () => {
-    const draft = drafts.get(selected.size ? selected.keys().next().value : reviewTarget);
+    const draft = drafts.get(selected.keys().next().value);
     if (draft) editDraft(draft);
     else $('question-batch-status').textContent = '다듬을 질문 하나를 선택해 주세요.';
   });
@@ -431,7 +424,6 @@
     selected.clear();
     checking.clear();
     requestedLegacyChecks.clear();
-    reviewTarget = null;
     $('question-batch-status').textContent = '';
     $('question-disclosure').open = false;
     paintDrafts();
@@ -493,7 +485,7 @@
     const v = $('q-input').value.trim();
     const open = st.session && st.session.status === 'OPEN';
     const hasBlank = BLANK.test(v);
-    $('send').disabled = !open || st.sending || batchSending || v.length < 5 || hasBlank;
+    $('send').disabled = !open || st.sending || batchSending || !v || hasBlank;
     $('hint').textContent = hasBlank ? '빈칸(___)이 아직 남아 있어요. 내 생각으로 채워 주세요'
       : st.current ? '고친 질문을 보내면 다시 코칭해 드려요' : '다른 학생에게는 내 이름이 보이지 않아요';
     $('send-now').hidden = !st.current || !open || batchSupported;
@@ -549,21 +541,21 @@
       if (!st.current) st.current = { id: res.id, original: text };
       st.current.level = res.level;
       st.current.text = text;
-      let draft = null;
       if (res.revision_id) {
         draftRead++;
         batchSupported = true;
-        draft = {...st.current, revision_id: res.revision_id, suitability: res.suitability};
+        const draft = {...st.current, revision_id: res.revision_id, suitability: res.suitability, coaching: res.coaching};
         st.current = null;
         questionAnchor = null;
         $('q-input').placeholder = '궁금한 점을 질문으로 써 보세요';
-        drafts.set(draft.id, draft);
+        if (draft.suitability?.status === 'needs_revision') drafts.delete(draft.id);
+        else drafts.set(draft.id, draft);
         $('question-batch-status').textContent = '';
-        const warning = WARNINGS[draft.suitability?.primary_reason];
-        if (warning) coachMsg(el('span', {class: 'error', text: warning}));
+        showDraftOutcome(draft);
         scheduleDraftPoll();
+      } else {
+        renderCoaching(res.level, res.coaching, null);
       }
-      renderCoaching(res.level, res.coaching, draft);
     } catch (err) {
       typing.remove();
       if (token !== access) return;
@@ -691,7 +683,7 @@
     $('mine-closed').hidden = !closed;
     $('mine-back').hidden = closed;
     $('mine-rejoin').hidden = !closed;
-    const sent = items;
+    const sent = items.filter(q => q.submitted || q.suitability?.status === 'eligible');
     if (!sent.length) {
       $('mine-list').replaceChildren(el('div', { class: 'empty', text: '아직 작성한 질문이 없어요.' }));
       return;

@@ -24,7 +24,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, and_, case, func, select, true
 from sqlalchemy.orm import Mapped, Session, mapped_column, undefer
@@ -192,13 +192,13 @@ class ConfusionRequest(BaseModel):
 class SessionAsk(BaseModel):
     slide_page: int | None = Field(default=None, ge=1)
     anchor: SlideAnchor | None = None
-    question: str = Field(min_length=5, max_length=2000)
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
     # Optional client key: a network retransmission returns the first question.
     request_id: str | None = Field(default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class SessionRevise(BaseModel):
-    text: str = Field(min_length=5, max_length=2000)
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class SuitabilityRecheck(BaseModel):
@@ -1254,9 +1254,14 @@ def _dispatch_check(background_tasks, row_id, revision_id):
 
 def _question_response(db, row):
     head, check = fit.current(db, row.id)
-    return {"id": row.id, "level": row.level, "coaching": _student_coaching(json.loads(row.latest_coaching_json)),
-            "revision_id": head.revision_id if head else None,
-            "suitability": fit.effective_check(row.latest_text, check, check.policy_version) if check else None}
+    state = fit.effective_check(row.latest_text, check, check.policy_version,
+                                anchored=fit.has_anchor(db, row.id)) if check else None
+    blocked = state and state["status"] == "needs_revision"
+    waiting = state and state["status"] == "pending"
+    return {"id": row.id, "level": None if blocked or waiting else row.level,
+            "coaching": None if blocked or waiting else _student_coaching(json.loads(row.latest_coaching_json)),
+            "message": fit.REJECTION_MESSAGE if blocked else None,
+            "revision_id": head.revision_id if head else None, "suitability": state}
 
 
 @router.post("/sessions/{session_id}/questions", status_code=201)
@@ -1276,7 +1281,9 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
     page = data.slide_page or page
     if data.anchor and (data.slide_page is None or page not in visible_pages(db.get(Material, s.material_id))):
         raise HTTPException(422, "Invalid question anchor")
-    coaching = _coach(db, s, user, data.question)  # no row locks are held during the model call
+    anchored = bool(data.anchor and data.anchor.quote.strip())
+    coaching = ({"mode": "suitability_blocked"} if fit.rule_reasons(data.question, anchored=anchored)
+                else _coach(db, s, user, data.question))
     _lock_open(db, s)
     q = Question(course_id=s.course_id, material_id=s.material_id, student_id=user.id,
                  text=data.question, feedback_json=json.dumps(coaching, ensure_ascii=False))
@@ -1327,7 +1334,8 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
         raise HTTPException(423, "The class is not taking questions right now")
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
-    coaching = _coach(db, s, user, data.text)
+    coaching = ({"mode": "suitability_blocked"} if fit.rule_reasons(data.text, anchored=fit.has_anchor(db, row.id))
+                else _coach(db, s, user, data.text))
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)  # same order as submits: session row, then question rows
     if row.submitted:
@@ -1367,7 +1375,7 @@ def recheck_suitability(row_id: str, data: SuitabilityRecheck, background_tasks:
         _dispatch_check(background_tasks, row.id, head.revision_id)
     if check.status != "pending" or queued:
         notify(s.id)
-    return {"id": row.id, "revision_id": head.revision_id, "suitability": fit.effective_check(row.latest_text, check, policy)}
+    return {"id": row.id, "revision_id": head.revision_id, "suitability": fit.effective_check(row.latest_text, check, policy, anchored=fit.has_anchor(db, row.id))}
 
 
 def _submit_problem(db, row, revision_id, policy):
@@ -1378,7 +1386,7 @@ def _submit_problem(db, row, revision_id, policy):
     current_revision = head.revision_id if head else fit.legacy_revision(row.id)
     if revision_id is not None and revision_id != current_revision:
         return "stale_revision"
-    state = fit.effective_check(row.latest_text, check, policy)
+    state = fit.effective_check(row.latest_text, check, policy, anchored=fit.has_anchor(db, row.id))
     if state["status"] == "needs_revision":
         return "not_eligible"
     if state["status"] != "eligible":
@@ -1466,10 +1474,21 @@ def mine(session_id: str, db: Session = Depends(session), user: User = Depends(a
     # sent ones keep their state and get no converted result.
     drafts = fit.drafts_for(db, rows, policy)
     db.commit()  # the class's policy row on first read
+    items = []
+    for row in rows:
+        revision_id, state = drafts[row.id]
+        blocked = not row.submitted and state["status"] == "needs_revision"
+        waiting = not row.submitted and state["status"] == "pending"
+        show_coaching = not (blocked or waiting)
+        items.append({
+            "id": row.id, "slide_page": pages.get(row.id), "level": row.level if show_coaching else None,
+            "level_label": LEVEL_LABEL[row.level] if show_coaching else None,
+            "text": row.latest_text if not blocked else None,
+            "original": originals[row.question_id] if not blocked else None,
+            "submitted": row.submitted, "submitted_at": _iso(row.submitted_at),
+            "revision_id": revision_id, "suitability": state,
+            "message": fit.REJECTION_MESSAGE if blocked else None,
+            "coaching": _student_coaching(json.loads(row.latest_coaching_json)) if show_coaching else None,
+        })
     return {"session": _public_session(db, s),
-            "suitability": {"enforced": True, "policy_version": policy},
-            "items": [{"id": r.id, "slide_page": pages.get(r.id), "level": r.level, "level_label": LEVEL_LABEL[r.level],
-                       "text": r.latest_text, "original": originals[r.question_id],
-                       "submitted": r.submitted, "submitted_at": _iso(r.submitted_at),
-                       "revision_id": drafts[r.id][0], "suitability": drafts[r.id][1],
-                       "coaching": _student_coaching(json.loads(r.latest_coaching_json))} for r in rows]}
+            "suitability": {"enforced": True, "policy_version": policy}, "items": items}

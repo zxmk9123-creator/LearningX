@@ -145,6 +145,52 @@ class SuitabilityTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(fit.rule_reasons(text), [], "polite objection, quotation, anonymised experience")
 
+    def test_intake_blocks_new_categories_without_returning_a_level(self):
+        self.open_class(guest=True)
+        token = self.student()
+        cases = {
+            "그건 왜 그렇게 되는 거예요?": "context_needed",
+            "교수님, 정말 좋아해요. 평균은 왜 움직이나요?": "confession",
+            "저랑 사귀어 주세요!": "confession",
+            "옆자리에 앉은 학생은 왜 조용해요?": "student_reference",
+            "다른 학생이 이번에 무엇을 냈나요?": "student_reference",
+            "민준 학생이 어떤 의견을 냈나요?": "student_reference",
+            "집단극화의 정의를 알려 주세요.": "information_only",
+            "집단극화란 무엇인가요?": "information_only",
+            "프랑스의 수도가 어디인가요?": "information_only",
+            "헐": "reaction_only",
+        }
+        for text, reason in cases.items():
+            with self.subTest(text=text):
+                with patch.object(nit, "coach_question") as coach:
+                    res = self.req("POST", f"/v1/sessions/{self.session_id}/questions", token,
+                                   json={"question": text})
+                    self.assertEqual(res.status_code, 201, res.text)
+                    coach.assert_not_called()
+                body = res.json()
+                self.assertIn(reason, body["suitability"]["reason_codes"])
+                self.assertEqual(body["message"], fit.REJECTION_MESSAGE)
+                self.assertIsNone(body["level"])
+                self.assertIsNone(body["coaching"])
+                saved = self.mine(token)[body["id"]]
+                self.assertIsNone(saved["level_label"])
+                self.assertIsNone(saved["text"])
+                self.assertEqual(self.batch(token, [body]).status_code, 409)
+                blocked = self.req("POST", f"/v1/session-questions/{body['id']}/submit", token)
+                self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(self.board_texts(), [])
+
+    def test_intake_keeps_academic_questions_and_explicit_anchors(self):
+        for text in (
+            "학생 집단의 평균 이동을 분산과 비교하면 어떻게 해석할 수 있나요?",
+            "교안에서 ‘사랑해요’라는 표현은 어떤 사회적 신호인가요?",
+            "저는 이 과목을 좋아해요. 집단극화는 왜 생기나요?",
+            "과제 제출 마감은 언제인가요?",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(fit.rule_reasons(text), [])
+        self.assertEqual(fit.rule_reasons("그건 왜 그렇게 되는 거예요?", anchored=True), [])
+
     def test_rules_catch_obfuscated_identifiers_direct_abuse_and_spam(self):
         cases = {
             "제 번호는 ０１０-１２３４-５６７８입니다": ["personal_or_private"],
@@ -302,13 +348,19 @@ class SuitabilityTests(unittest.TestCase):
         token = self.student()
         with patch.object(fit, "process") as later:
             body = self.ask(token)
-        self.assertEqual(body["suitability"]["status"], "pending", "ask answers with coaching and pending")
+        self.assertEqual(body["suitability"]["status"], "pending", "ask waits for suitability before exposing coaching")
         self.assertEqual(body["suitability"]["mode"], "model")
+        self.assertIsNone(body["level"])
+        self.assertIsNone(body["coaching"])
         later.assert_called_once_with(body["id"], body["revision_id"])
         fit.process(body["id"], body["revision_id"])
         self.assertEqual(self.mine(token)[body["id"]]["suitability"]["status"], "eligible")
-        off = self.ask(token, "좋아하는 연예인 누구예요?")  # TestClient runs the background task
-        self.assertEqual(self.mine(token)[off["id"]]["suitability"]["reason_codes"], ["off_topic"])
+        off = self.ask(token, "연예인 이야기를 재미있게 해 주세요.")  # TestClient runs the background task
+        rejected = self.mine(token)[off["id"]]
+        self.assertEqual(rejected["suitability"]["reason_codes"], ["off_topic"])
+        self.assertEqual(rejected["message"], fit.REJECTION_MESSAGE)
+        self.assertIsNone(rejected["level_label"])
+        self.assertIsNone(rejected["coaching"])
         sent = self.gateway.calls[-1]
         self.assertEqual(set(sent), {"lesson", "question"}, "only lesson context and the question are sent")
 
