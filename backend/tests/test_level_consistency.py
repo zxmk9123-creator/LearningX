@@ -2,7 +2,7 @@
 
 Three layers: explicit level cues decide the tier (level_rules), the model is
 called with temperature 0 and a fixed seed, and a class keeps the first level it
-gave a normalized question (level_cache).
+gave a normalized question (root decision ledger).
 """
 import io
 import json
@@ -20,12 +20,17 @@ os.environ.setdefault("NIT_JWT_SECRET", "test-only-signing-key-12345678901234567
 os.environ.setdefault("NIT_STORAGE_DIR", str(Path(TEMP.name) / "private"))
 
 from learningx import engine_adapter as nit  # noqa: E402
-from learningx import level_cache  # noqa: E402
-from learningx.storage import SessionLocal, init_db  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from learningx.api import app  # noqa: E402
+from learningx.classroom import SessionQuestion  # noqa: E402
+from learningx.security import issue_token  # noqa: E402
+from learningx.storage import Course, Material, Member, SessionLocal, User, uid  # noqa: E402
 
 nit._modules()
 import runtime.coaching as engine  # noqa: E402
 from runtime.gateway import OpenAICompatibleGateway  # noqa: E402
+from runtime.guardrails import followup_violation  # noqa: E402
 from runtime.level_rules import TIER, normalize, resolve_level, rule_tier  # noqa: E402
 
 EVIDENCE = [{"page": 1, "block_id": "b1", "text": "유명인 광고 모델의 신뢰성과 매력성은 설득 효과에 영향을 준다."}]
@@ -96,43 +101,132 @@ class RepeatedModelDriftTests(unittest.TestCase):
         self.assertEqual(result["level_basis"], "rule:reason")
         self.assertEqual(result["model_observability"]["model_level"], "clarify")
 
+    def test_feedback_is_the_fixed_root_sentence(self):
+        result = coach(CASES["mid"][0], gateway_returning("analyze"))
+        self.assertEqual(result["feedback"], "질문의 근거와 전제를 구체화해 보세요.")
+
     def test_the_prompt_carries_the_rubric(self):
         for word in ("clarify:", "analyze:", "evaluate:", "같은 질문에는 언제나 같은 question_level"):
             self.assertIn(word, engine.SYSTEM)
 
 
-class CacheTests(unittest.TestCase):
+def validated(level, follow_up="어떤 근거를 먼저 확인하면 좋을까요?"):
+    return {"mode": "MODEL_VALIDATED", "question_level": level, "follow_up_question": follow_up,
+            "feedback": "질문의 근거와 전제를 구체화해 보세요.", "evidence_refs": [{"id": "p1:b1", "page": 1}],
+            "student_must_write_revision": True, "validation": "schema_and_policy_checked",
+            "level_basis": "model", "level_rubric": "level-rubric-v1",
+            "model_observability": {"provider": "mock", "model": "model-" + level}}
+
+
+class RootLedgerTests(unittest.TestCase):
+    """The platform owns decisions: a decided question is replayed, not re-asked."""
+
     @classmethod
     def setUpClass(cls):
-        init_db()
+        cls.client = TestClient(app)
+        cls.client.__enter__()
 
-    def coaching(self, level, basis="model"):
-        return {"mode": "MODEL_VALIDATED", "question_level": level, "level_basis": basis,
-                "level_rubric": "level-rubric-v1"}
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
 
-    def test_the_first_judgment_is_reused_for_the_same_question(self):
+    def open_class(self):
+        folder = Path(TEMP.name) / ("lesson-" + uid())
+        folder.mkdir(parents=True)
+        (folder / "document.json").write_text(json.dumps({"pages": [{"page": 1, "blocks": []}]}))
         with SessionLocal() as db:
-            first = level_cache.stabilize(db, self.coaching("apply"), "광고 이야기 좀 더 해 주세요", "m1", None)
-            again = level_cache.stabilize(db, self.coaching("evaluate"), "광고 이야기 좀 더  해 주세요?", "m1", None)
+            faculty = User(email=f"root-{uid()}@test.local", role="faculty")
+            db.add(faculty)
+            db.flush()
+            course = Course(title="설득 커뮤니케이션", policy="PERMITTED", teacher_approved=True, created_by=faculty.id)
+            db.add(course)
+            db.flush()
+            db.add(Member(course_id=course.id, user_id=faculty.id, role="faculty"))
+            material = Material(course_id=course.id, filename="lesson.pdf", sha256="a" * 64,
+                                out_dir=str(folder), ingested_by=faculty.id)
+            db.add(material)
             db.commit()
-        self.assertEqual(first["question_level"], "apply")
-        self.assertEqual((again["question_level"], again["level_basis"]), ("apply", "cache:model"))
+            course_id, material_id = course.id, material.id
+        faculty_token = issue_token(faculty.id)
+        with patch.object(nit, "verified_count", return_value=1):
+            opened = self.client.post(f"/v1/courses/{course_id}/sessions", json={"material_id": material_id},
+                                      headers={"Authorization": "Bearer " + faculty_token}).json()
+        return opened["join_code"], opened["id"]
 
-    def test_context_changes_start_a_new_judgment(self):
+    def ask(self, code, session_id, text, coaching):
+        token = self.client.post("/v1/join", json={"code": code}).json()["access_token"]
+        engine_call = Mock(return_value=coaching)
+        with patch.object(nit, "coach_question", engine_call):
+            res = self.client.post(f"/v1/sessions/{session_id}/questions", json={"question": text},
+                                   headers={"Authorization": "Bearer " + token})
+        self.assertEqual(res.status_code, 201, res.text)
         with SessionLocal() as db:
-            level_cache.stabilize(db, self.coaching("apply"), "다른 교안 질문", "m2", None)
-            other_material = level_cache.stabilize(db, self.coaching("create"), "다른 교안 질문", "m3", None)
-            other_profile = level_cache.stabilize(db, self.coaching("create"), "다른 교안 질문", "m2", "p:2")
-            db.commit()
-        self.assertEqual(other_material["question_level"], "create")
-        self.assertEqual(other_profile["question_level"], "create")
+            stored = json.loads(db.get(SessionQuestion, res.json()["id"]).latest_coaching_json)
+        return res.json(), stored, engine_call.call_count
 
-    def test_fallback_coaching_is_not_cached(self):
-        with SessionLocal() as db:
-            fallback = {"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze"}
-            self.assertIs(level_cache.stabilize(db, fallback, "보류 질문", "m4", None), fallback)
-            later = level_cache.stabilize(db, self.coaching("clarify"), "보류 질문", "m4", None)
-        self.assertEqual(later["question_level"], "clarify")
+    def test_any_model_after_the_first_decision_is_not_asked(self):
+        code, sid = self.open_class()
+        text = "광고 모델 이야기를 조금 더 들을 수 있을까요?"
+        first, stored, calls = self.ask(code, sid, text, validated("apply", "어떤 사례에 먼저 적용해 볼까요?"))
+        self.assertEqual((first["level"], calls, stored["decision_source"]), ("mid", 1, "model_proposal_accepted"))
+        for drift in ("clarify", "evaluate", "create"):
+            again, stored, calls = self.ask(code, sid, text + " ", validated(drift, "다른 역질문이 나올까요?"))
+            self.assertEqual(calls, 0, "a decided question never reaches a model")
+            self.assertEqual((again["level"], again["coaching"]["follow_up_question"], stored["decision_source"]),
+                             ("mid", "어떤 사례에 먼저 적용해 볼까요?", "ledger"))
+            self.assertNotIn("model_observability", stored)
+
+    def test_a_provider_outage_still_replays_the_decision(self):
+        code, sid = self.open_class()
+        text = "광고 모델 사례를 하나 더 볼 수 있을까요?"
+        self.ask(code, sid, text, validated("analyze"))
+        outage = {"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze", "reason": "model_timeout"}
+        again, _, calls = self.ask(code, sid, text, outage)
+        self.assertEqual((again["level"], calls), ("mid", 0))
+
+    def test_fallbacks_are_not_decisions(self):
+        code, sid = self.open_class()
+        text = "광고 모델 사례 정리가 가능할까요?"
+        outage = {"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze", "reason": "model_timeout"}
+        first, _, _ = self.ask(code, sid, text, outage)
+        later, _, calls = self.ask(code, sid, text, validated("clarify"))
+        self.assertEqual((first["level"], later["level"], calls), ("unassessed", "shallow", 1))
+
+    def test_another_class_material_decides_afresh(self):
+        text = "광고 모델 내용을 더 알려 줄 수 있을까요?"
+        self.ask(*self.open_class(), text, validated("apply"))
+        other, _, calls = self.ask(*self.open_class(), text, validated("evaluate"))
+        self.assertEqual((other["level"], calls), ("deep", 1))
+
+    def test_the_policy_version_names_every_root_rule(self):
+        version = engine.ROOT_POLICY_VERSION
+        for part in ("nit_coaching_v1", "coaching-prompt-v", "level-rubric-v", "guardrails-v"):
+            self.assertIn(part, version)
+
+
+class GuardrailTests(unittest.TestCase):
+    def test_model_text_that_breaks_a_root_rule_is_rejected(self):
+        cases = {
+            "What evidence should you check first in this case?": "guardrail_not_korean",
+            "저는 AI 언어 모델로서 어떤 근거를 볼지 물어볼까요?": "guardrail_model_meta",
+            "정답은 신뢰성이므로 다른 요인은 무엇일까요?": "guardrail_answer_leak",
+            "교안의 두 번째 문단을 다시 읽어 보세요?": None,
+            "유명인 광고 모델의 신뢰성이 설득에 영향을 주는 이유는 무엇인가요?": "guardrail_echoes_student",
+        }
+        question = "유명인 광고 모델의 신뢰성이 설득에 영향을 주는 이유는 무엇인가요"
+        for follow_up, code in cases.items():
+            with self.subTest(follow_up=follow_up):
+                self.assertEqual(followup_violation(follow_up, question), code)
+
+    def test_a_rejected_proposal_becomes_the_fixed_fallback(self):
+        gateway = Mock()
+        gateway.generate.return_value = SimpleNamespace(text=json.dumps({
+            "schema_version": "nit_coaching_v1", "question_level": "analyze", "evidence_ids": [],
+            "follow_up_question": "신뢰성 때문이므로 다른 요인은 무엇일까요?"}, ensure_ascii=False),
+            provider="mock", model="mock")
+        result = coach("신뢰성이 왜 중요한가요?", gateway)
+        self.assertEqual(result["mode"], "DETERMINISTIC_FALLBACK")
+        self.assertIn("InvalidModelOutput: guardrail_answer_leak", result["model_errors"])
 
 
 class GatewayTests(unittest.TestCase):

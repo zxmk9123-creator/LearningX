@@ -11,11 +11,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from verified_coaching import coach as signed_evidence_coach, verify as verify_signed_evidence, STEMS
 from .gateway import GatewayFailure, GatewayTimeout
+from .guardrails import GUARDRAIL_VERSION, followup_violation
 from .level_rules import RUBRIC_VERSION, resolve_level
 
 LEVELS = frozenset(('clarify','apply','analyze','evaluate','create'))
 SCHEMA = 'nit_coaching_v1'
 RETRY_LIMIT = 1
+PROMPT_VERSION = 'coaching-prompt-v2'
+# Every root rule a coaching decision depends on. Changing any of them starts a
+# fresh decision ledger, so old decisions are never replayed under new rules.
+ROOT_POLICY_VERSION = '+'.join((SCHEMA, PROMPT_VERSION, RUBRIC_VERSION, GUARDRAIL_VERSION))
 
 SYSTEM = '''당신은 NIT 수업의 질문 개선 조력자입니다. 정답, 해설, 수치, 인용문, 정답의 암시를 제공하지 마세요.
 제공된 학습자 질문을 개선하기 위해 한국어 역질문 한 개만 제안하세요.
@@ -81,7 +86,7 @@ def _clean_json(s):
     except (ValueError,TypeError) as ex:raise InvalidModelOutput('invalid_json') from ex
 
 
-def validate_model_response(raw, allowed_ids, evidence_texts=(), with_relevance=False):
+def validate_model_response(raw, allowed_ids, evidence_texts=(), with_relevance=False, student_question=''):
     obj=_clean_json(raw)
     keys={'schema_version','question_level','evidence_ids','follow_up_question'}|({'goal_relevance'} if with_relevance else set())
     if not isinstance(obj,dict) or set(obj)!=keys:
@@ -107,6 +112,9 @@ def validate_model_response(raw, allowed_ids, evidence_texts=(), with_relevance=
         st=normalized(source)
         if len(nq)>=28 and nq in st or len(st)>=28 and st in nq:
             raise InvalidModelOutput('source_text_leakage')
+    violation=followup_violation(q,student_question)
+    if violation:
+        raise InvalidModelOutput(violation)
     return obj
 
 
@@ -190,7 +198,7 @@ def run_coaching(out, question, policy, teacher_approved, signing_secret, authen
         try:
             response=gateway.generate(system,model_user if attempt==0 else model_user+'\n이전 응답이 스키마/정책 검증에 실패했습니다. 정확한 JSON 하나만 반환하세요.')
             obj=validate_model_response(response.text,allowed,[v['text'] for v in id_map.values()],
-                with_relevance=bool(objective))
+                with_relevance=bool(objective),student_question=question)
             # Do not propagate provider freeform metadata or raw evidence to students.
             # Explicit level cues decide the tier deterministically; the model judges the rest.
             level,basis=resolve_level(question,obj['question_level'])
@@ -213,7 +221,8 @@ def run_coaching(out, question, policy, teacher_approved, signing_secret, authen
         except (GatewayFailure,InvalidModelOutput) as ex:
             # Gateway messages are written to be safe (status code or error class, never the
             # body, URL query or key); model output text is never recorded.
-            errors.append(type(ex).__name__+(': '+str(ex)[:80] if isinstance(ex,GatewayFailure) else ''))
+            # InvalidModelOutput carries only our own rule code, never model text.
+            errors.append(type(ex).__name__+': '+str(ex)[:80])
     answer=_fallback_for(reason='model_validation_or_transport_failed')
     answer['attempts']=RETRY_LIMIT+1
     # Kept with the stored coaching for operators; student and board views whitelist their fields.

@@ -36,7 +36,7 @@ from .live_slides import LiveSlide, LiveTransition, QuestionSlide, build_snapsho
 from .live_timing import LiveTimingRoute, record_phase
 from .objectives import coaching_payload, link_latest_profile, session_profile
 from . import suitability as fit
-from . import level_cache
+from . import judgments
 from .security import actor, decode_token, issue_token, require_course, scheme, session
 from .storage import Audit, Base, Course, Material, Member, Question, Revision, LiveReadSession, PublishSession, SessionLocal, User, publish_engine, uid
 
@@ -288,18 +288,35 @@ def _coach(db, s: ClassSession, user: User, text: str) -> dict:
     profile = session_profile(db, s.id)
     objective = coaching_payload(profile) if profile else None
     with private_store.material_workspace(m) as out:
-        owner = db.get(User, c.created_by)
-        options = {"objective": objective} if objective else {}
-        # Guest classes and deployments without a configured model use the deterministic coaching
-        # (recorded as unassessed) instead of failing the student's question with a 503.
-        use_model = not (owner and is_guest(owner)) and nit.model_gateway() is not None
-        coaching = nit.coach_question(out, user.id, text, c.policy, c.teacher_approved, use_model=use_model, **options)
+        # Root decision ledger first: an identical question in the same context gets the
+        # decision already made, without a model call (docs/ROOT_GUARDRAILS.md).
+        policy = judgments.coaching_policy()
+        context = {"material": m.id, "material_sha256": m.sha256, "evidence": nit.evidence_fingerprint(out),
+                   "course_policy": c.policy, "teacher_approved": bool(c.teacher_approved),
+                   "profile": f"{profile.id}:{profile.version}" if profile else None}
+        key = judgments.key_for(judgments.COACHING, policy, context, text)
+        decided = judgments.recall(db, key)
+        if decided is None:
+            owner = db.get(User, c.created_by)
+            options = {"objective": objective} if objective else {}
+            # Guest classes and deployments without a configured model use the deterministic coaching
+            # (recorded as unassessed) instead of failing the student's question with a 503.
+            use_model = not (owner and is_guest(owner)) and nit.model_gateway() is not None
+            coaching = nit.coach_question(out, user.id, text, c.policy, c.teacher_approved, use_model=use_model, **options)
+            proposal = judgments.coaching_decision(coaching)
+            if proposal is not None:
+                decided = judgments.record(db, key, judgments.COACHING, policy, proposal)
+                if decided != proposal:  # a concurrent identical question was decided first
+                    coaching = {**decided, "decision_source": "ledger"}
+                else:
+                    coaching = {**coaching, "decision_source": "model_proposal_accepted"}
+        else:
+            coaching = {**decided, "decision_source": "ledger"}
+    coaching = {**coaching, "root_policy": policy}
     if profile:
         # Coaching logs record the profile version so results can be reviewed with the same settings.
         coaching = {**coaching, "objective_profile": {"id": profile.id, "version": profile.version}}
-    # The same question in the same class context always gets the same level.
-    return level_cache.stabilize(db, coaching, text, m.id,
-                                 f"{profile.id}:{profile.version}" if profile else None)
+    return coaching
 
 
 def _iso(dt):

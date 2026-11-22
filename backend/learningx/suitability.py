@@ -27,9 +27,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, or_
 from sqlalchemy.orm import Mapped, mapped_column
 
+from . import judgments
 from .storage import Base, uid
 
 POLICY_VERSION = "suitability-v1"
+# Version of the classifier prompt below; part of the root decision ledger key.
+MODEL_PROMPT_VERSION = "suitability-prompt-v1"
 REJECTION_MESSAGE = "반응만 적기보다 수업에서 궁금하거나 더 알아보고 싶은 내용을 적어 주세요."
 STATUSES = ("pending", "eligible", "needs_revision")
 MODEL_REASONS = ("off_topic", "targeted_attack", "personal_or_private", "disruption",
@@ -670,14 +673,24 @@ def run(claimed, gateway_factory=None, session_factory=None) -> str:
         if head is None or head.revision_id != revision_id:
             return "stale"
         text, context = _context(db, row_id)
+        pending = db.get(SuitabilityCheck, (row_id, revision_id))
+        policy = (pending.policy_version if pending else POLICY_VERSION) + "+" + MODEL_PROMPT_VERSION
+        # Root decision ledger: the same question in the same lesson context keeps its verdict
+        # whichever model is routed, and without a model call (docs/ROOT_GUARDRAILS.md).
+        key = judgments.key_for(judgments.SUITABILITY, policy,
+                                {"material_id": _material_of(db, row_id), **context}, text)
+        decided = judgments.recall(db, key)
     question_form = has_question_form(text)
-    result, failed = ("needs_revision", ["not_a_question"]), False
-    if question_form:
+    result, failed, proposed = ("needs_revision", ["not_a_question"]), False, False
+    if question_form and decided:
+        result = (decided["status"], decided["reason_codes"])
+    elif question_form:
         try:
             gateway = (gateway_factory or nit.model_gateway)()
             if gateway is None:
                 raise RuntimeError("model unavailable in worker")
             result = classify(gateway, context, text)
+            proposed = True
         except Exception:
             failed = True
     with opener() as db:
@@ -699,6 +712,10 @@ def run(claimed, gateway_factory=None, session_factory=None) -> str:
                 check.lease_until = now() + timedelta(seconds=RETRY_BACKOFF_SECONDS[check.attempts])
                 outcome = "retry"
         else:
+            if proposed:
+                stored = judgments.record(db, key, judgments.SUITABILITY, policy,
+                                          {"status": result[0], "reason_codes": list(result[1])})
+                result = (stored["status"], stored["reason_codes"])
             check.status, codes = result
             if not question_form:
                 check.mode = "rules"
@@ -712,6 +729,11 @@ def run(claimed, gateway_factory=None, session_factory=None) -> str:
         from .live_slides import notify
         notify(session_id)
     return outcome
+
+
+def _material_of(db, row_id):
+    from .classroom import ClassSession, SessionQuestion
+    return db.get(ClassSession, db.get(SessionQuestion, row_id).session_id).material_id
 
 
 def _session_of(db, row_id):

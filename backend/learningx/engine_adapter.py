@@ -4,6 +4,7 @@ The engine is deliberately NOT reimplemented here. Install the reviewed engine
 under NIT_ENGINE_ROOT. It provides scripts/ingest.py, scripts/verified_coaching.py,
 runtime/coaching.py, runtime/gateway.py. No engine = ingestion/approval/coaching 503.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -38,6 +39,12 @@ def level_rubric():
     _modules()
     from runtime.level_rules import RUBRIC_VERSION, normalize
     return RUBRIC_VERSION,normalize
+
+def coaching_policy_version():
+    """Version of every root rule a coaching decision depends on (prompt, rubric, guardrails)."""
+    _modules()
+    from runtime.coaching import ROOT_POLICY_VERSION
+    return ROOT_POLICY_VERSION
 
 def model_gateway():
     """The configured model gateway, or None when no model is configured.
@@ -118,6 +125,15 @@ def coach_question(out:Path, student:str, question:str, policy:str, teacher_appr
         if exc.__class__.__name__=="GatewayFailure":
             raise HTTPException(503,"Model provider is not configured") from exc
         raise
+
+def evidence_fingerprint(out:Path):
+    """Digest of the faculty-signed evidence set; a re-approval changes it."""
+    _,verify,*_=_modules()
+    signing=os.getenv("NIT_REVIEW_SIGNING_KEY","")
+    try:items=verify(out,signing) if len(signing)>=32 else []
+    except (PermissionError,ValueError,FileNotFoundError,KeyError):items=[]
+    ids=sorted(f"{int(i['page'])}:{i['block_id']}" for i in items)
+    return hashlib.sha256("|".join(ids).encode()).hexdigest()[:32]
 
 def verified_count(out:Path):
     _,verify,*_=_modules()

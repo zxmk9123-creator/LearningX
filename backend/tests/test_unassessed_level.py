@@ -81,7 +81,7 @@ class UnassessedLevelTests(unittest.TestCase):
         return self.client.request(method, path, headers=headers, **kw)
 
     def ask(self, coaching, text=None):
-        # Distinct texts: the same question in a class reuses its first level (level_cache).
+        # Distinct texts: the same question in a class replays its first decision (root ledger).
         self._asked = getattr(self, "_asked", 0) + 1
         text = text or f"{self._asked}번 실험에서 두 집단의 차이는 무엇인가요?"
         student = self.req("POST", "/v1/join", json={"code": self.code}).json()["access_token"]

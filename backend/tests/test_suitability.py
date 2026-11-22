@@ -494,6 +494,35 @@ class SuitabilityTests(unittest.TestCase):
                          json={"revision_id": "old"})
         self.assertEqual((stale.status_code, stale.json()["detail"]["code"]), (409, "stale_revision"))
 
+    def test_the_root_ledger_keeps_a_verdict_whichever_model_answers_next(self):
+        text = "토론 뒤 분산이 줄어든 이유를 분포 그림으로 확인할 수 있나요?"
+        self.gateway = Gateway(answers={"분산": ("needs_revision", ["off_topic"])})
+        first = self.ask(self.student(), text)
+        self.assertEqual(len(self.gateway.calls), 1)
+        # Another model routed next time would say eligible; it is not even asked.
+        self.gateway = Gateway()
+        token = self.student()
+        second = self.ask(token, text + "  ")
+        self.assertEqual(self.gateway.calls, [], "a decided question does not call a model")
+        self.assertEqual(self.mine(token)[second["id"]]["suitability"]["reason_codes"], ["off_topic"])
+        # The provider being down does not change it either.
+        self.gateway = Gateway(fail=True)
+        token = self.student()
+        third = self.ask(token, text)
+        self.assertEqual(self.mine(token)[third["id"]]["suitability"]["status"], "needs_revision")
+        self.assertNotEqual(first["id"], third["id"])
+
+    def test_a_different_lesson_gets_its_own_verdict(self):
+        text = "토론 뒤 의견 분포가 양극으로 갈린 원인을 비교할 수 있나요?"
+        self.gateway = Gateway(answers={"양극": ("needs_revision", ["off_topic"])})
+        self.ask(self.student(), text)
+        self.open_class()
+        self.gateway = Gateway()
+        token = self.student()
+        body = self.ask(token, text)
+        self.assertEqual(len(self.gateway.calls), 1, "a new lesson context asks again")
+        self.assertEqual(self.mine(token)[body["id"]]["suitability"]["status"], "eligible")
+
     def test_a_late_result_for_an_older_draft_is_discarded(self):
         self.gateway = Gateway(answers={"원래": ("needs_revision", ["context_needed"])})
         token = self.student()
