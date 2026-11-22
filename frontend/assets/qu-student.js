@@ -328,6 +328,20 @@
     }
   }
 
+  // Opening the send box by hand glides the page to the box's bottom (the send button),
+  // kept clear of the sticky composer. Programmatic opens do not move the page.
+  let disclosureByUser = false;
+  $('question-summary').addEventListener('click', () => { disclosureByUser = true; });
+  $('question-disclosure').addEventListener('toggle', event => {
+    const opened = event.currentTarget.open && disclosureByUser;
+    disclosureByUser = false;
+    if (!opened) return;
+    const box = $('question-selection');
+    const composer = $('composer') && $('composer').parentElement;
+    box.style.scrollMarginBottom = ((composer ? composer.offsetHeight : 0) + 12) + 'px';
+    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    requestAnimationFrame(() => box.scrollIntoView({block: 'end', behavior: still ? 'auto' : 'smooth'}));
+  });
   $('question-new').addEventListener('click', () => editDraft());
   $('question-edit').addEventListener('click', () => {
     const draft = drafts.get(selected.keys().next().value);
