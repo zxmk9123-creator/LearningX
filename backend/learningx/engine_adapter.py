@@ -33,6 +33,12 @@ def _modules():
     from runtime.gateway import OpenAICompatibleGateway
     return approve,verify,block_digest,load_blocks,run_coaching,OpenAICompatibleGateway
 
+def level_rubric():
+    """(rubric version, question normalizer) from the engine's level rules."""
+    _modules()
+    from runtime.level_rules import RUBRIC_VERSION, normalize
+    return RUBRIC_VERSION,normalize
+
 def model_gateway():
     """The configured model gateway, or None when no model is configured.
 

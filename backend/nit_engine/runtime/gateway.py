@@ -37,7 +37,7 @@ class OpenAICompatibleGateway:
     URL/model/key are explicit server configuration, not defaults inferred from a brand.
     """
     def __init__(self, base_url=None, api_key=None, model=None, timeout=25, opener=None,
-                 max_tokens=650, json_mode=True):
+                 max_tokens=650, json_mode=True, seed=None):
         self.base_url = base_url or os.environ.get('NIT_LLM_BASE_URL')
         self.api_key = api_key or os.environ.get('NIT_LLM_API_KEY')
         self.model = model or os.environ.get('NIT_LLM_MODEL')
@@ -45,6 +45,8 @@ class OpenAICompatibleGateway:
         self.opener = opener or urllib.request.urlopen
         self.max_tokens = int(max_tokens)
         self.json_mode = bool(json_mode)
+        seed = os.environ.get('NIT_LLM_SEED', '7') if seed is None else seed
+        self.seed = None if str(seed).strip().lower() in ('', 'off', 'none') else int(seed)
         if not (64 <= self.max_tokens <= 2048):
             raise GatewayFailure('max_tokens must be between 64 and 2048')
         if not (self.base_url and self.api_key and self.model):
@@ -54,11 +56,24 @@ class OpenAICompatibleGateway:
         self.url = self.base_url.rstrip('/') + '/chat/completions'
 
     def generate(self, system, user):
+        # Judgments must be reproducible: greedy decoding and a fixed seed where supported.
         payload = {'model': self.model, 'messages': [
             {'role':'system','content':system}, {'role':'user','content':user}],
-            'temperature': 0.2, 'max_tokens': self.max_tokens}
+            'temperature': 0, 'max_tokens': self.max_tokens}
+        if self.seed is not None:
+            payload['seed'] = self.seed
         if self.json_mode:
             payload['response_format'] = {'type': 'json_object'}
+        try:
+            return self._post(payload)
+        except GatewayFailure as exc:
+            # A provider that rejects the optional seed field gets one call without it.
+            if 'seed' in payload and str(exc) in ('Provider HTTP status: 400', 'Provider HTTP status: 422'):
+                payload.pop('seed')
+                return self._post(payload)
+            raise
+
+    def _post(self, payload):
         data = json.dumps(payload, ensure_ascii=False).encode()
         req = urllib.request.Request(self.url, data=data, headers={
             'Authorization':'Bearer '+self.api_key, 'Content-Type':'application/json'}, method='POST')

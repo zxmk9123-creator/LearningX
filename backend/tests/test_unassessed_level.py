@@ -80,7 +80,10 @@ class UnassessedLevelTests(unittest.TestCase):
         headers = {"Authorization": "Bearer " + token} if token else {}
         return self.client.request(method, path, headers=headers, **kw)
 
-    def ask(self, coaching, text="이 실험에서 두 집단의 차이는 무엇인가요?"):
+    def ask(self, coaching, text=None):
+        # Distinct texts: the same question in a class reuses its first level (level_cache).
+        self._asked = getattr(self, "_asked", 0) + 1
+        text = text or f"{self._asked}번 실험에서 두 집단의 차이는 무엇인가요?"
         student = self.req("POST", "/v1/join", json={"code": self.code}).json()["access_token"]
         with patch.object(nit, "coach_question", return_value=coaching):
             asked = self.req("POST", f"/v1/sessions/{self.session_id}/questions", student, json={"question": text})

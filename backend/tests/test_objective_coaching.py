@@ -62,7 +62,8 @@ class EngineObjectiveTests(unittest.TestCase):
         gateway = model(answer(goal_relevance="direct"))
         result = coach(gateway, OBJECTIVE)
         self.assertEqual((result["mode"], result["question_level"], result["goal_relevance"]),
-                         ("MODEL_VALIDATED", "clarify", "direct"))
+                         ("MODEL_VALIDATED", "analyze", "direct"))  # "왜" is a reason cue: mid tier
+        self.assertEqual(result["model_observability"]["model_level"], "clarify")
         system, user = gateway.generate.call_args.args
         self.assertIn("question_level은 학습목표나 지원 정도와 무관하게", system)
         payload = json.loads(user)

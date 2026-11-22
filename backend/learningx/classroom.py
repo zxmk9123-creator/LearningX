@@ -36,6 +36,7 @@ from .live_slides import LiveSlide, LiveTransition, QuestionSlide, build_snapsho
 from .live_timing import LiveTimingRoute, record_phase
 from .objectives import coaching_payload, link_latest_profile, session_profile
 from . import suitability as fit
+from . import level_cache
 from .security import actor, decode_token, issue_token, require_course, scheme, session
 from .storage import Audit, Base, Course, Material, Member, Question, Revision, LiveReadSession, PublishSession, SessionLocal, User, publish_engine, uid
 
@@ -296,7 +297,9 @@ def _coach(db, s: ClassSession, user: User, text: str) -> dict:
     if profile:
         # Coaching logs record the profile version so results can be reviewed with the same settings.
         coaching = {**coaching, "objective_profile": {"id": profile.id, "version": profile.version}}
-    return coaching
+    # The same question in the same class context always gets the same level.
+    return level_cache.stabilize(db, coaching, text, m.id,
+                                 f"{profile.id}:{profile.version}" if profile else None)
 
 
 def _iso(dt):
