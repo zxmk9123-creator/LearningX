@@ -15,6 +15,23 @@
     return pdfLibrary;
   }
 
+  // A PDF.js worker that crashed (for example out of memory on a large page) fails every
+  // later document. Drop it so the next load starts a fresh one.
+  function resetPdfWorker() {
+    const worker = pdfWorker;
+    pdfWorker = null;
+    try { worker?.destroy(); } catch (_) { /* already gone */ }
+  }
+  const httpError = err => Number.isInteger(err?.status) && err.status > 0;
+  // A crashed worker can leave a render waiting forever instead of failing; give up after a while.
+  const RENDER_TIMEOUT = 20000;
+  function within(promise, ms) {
+    let timer;
+    return Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error('render timeout'), {renderTimeout: true})), ms);
+    })]).finally(() => clearTimeout(timer));
+  }
+
   function loadPdf(bytes) {
     return warmPdf().then(async lib => {
       pdfWorker ??= new lib.PDFWorker();
@@ -34,6 +51,7 @@
         return {lib, doc: await task.promise};
       } catch (error) {
         await task.destroy().catch(() => {});
+        if (pdfWorker === worker) resetPdfWorker();
         throw error;
       }
     });
@@ -113,6 +131,9 @@
     let activeRender;
     let retryTimer;
     let retryCount = 0;
+    let wanted = null;          // the page the view should be showing now (live page or the presenter's pick)
+    let deckFailures = 0;
+    let reloadDeck = () => {};
     let refreshNow = false;
     let pollController = null;
     let pollParked = false;
@@ -421,7 +442,7 @@
       const url = path + '/page/' + encodeURIComponent(target.version) + '?page=' + number;
       if (!faculty) liveMark?.('pdf-request', target.version, number);
       const pending = api(url, {
-        timeout: 12000,
+        timeout: faculty ? 30000 : 12000,
         readBody: response => {
           if (!faculty) liveMark?.('pdf-headers', target.version, number, undefined,
             liveTimingEnabled ? response.headers.get('Server-Timing') : undefined);
@@ -470,22 +491,58 @@
       });
     }
 
+    // Shows a page and keeps retrying until it appears or another page is wanted. A failed
+    // render must never leave the view stuck on an error: transient storage, network or PDF.js
+    // failures all recover on a later attempt.
     function follow(target) {
       clearTimeout(retryTimer);
+      if (target !== wanted) retryCount = 0;
+      wanted = target;
       const render = display(target);
       activeRender = render;
       render.then(shown => {
         if (activeRender !== render || stopped) return;
         activeRender = null;
         // 'stale': the server moved on; the next poll brings the latest page, so do not retry this one.
-        if (shown === true || shown === 'stale' || faculty || !target || target.version !== slide?.version) {
-          retryCount = 0;
+        if (shown === true || shown === 'stale' || !target || wanted !== target ||
+            (!faculty && target.version !== slide?.version)) {
+          if (shown === true) retryCount = 0;
           return;
         }
         retryTimer = setTimeout(() => {
-          if (!stopped && target.version === slide?.version) follow(target);
-        }, Math.min(350 * 2 ** retryCount++, 2000));
+          if (!stopped && wanted === target && (faculty || target.version === slide?.version)) follow(target);
+        }, Math.min(350 * 2 ** retryCount++, faculty ? 5000 : 2000));
       });
+    }
+
+    function retryNow() {
+      if (stopped || !wanted) return;
+      retryCount = 0;
+      follow(wanted);
+    }
+
+    function showFailure() {
+      if (retryCount < 2) {
+        status.textContent = '교안 화면을 다시 불러오는 중입니다…';
+        return;
+      }
+      const again = el('button', {type: 'button', class: 'btn sm live-retry', text: '다시 불러오기'});
+      again.addEventListener('click', retryNow);
+      status.replaceChildren('교안 화면을 불러오지 못해 계속 다시 시도하고 있습니다. ', again);
+    }
+
+    // The presenter's whole-PDF copy failed to draw: show this page from the per-page route,
+    // and after repeated failures replace the copy (its PDF.js worker may have crashed).
+    function deckRenderFailed() {
+      if (++deckFailures < 2 || !deck) return;
+      const old = deck;
+      deck = null;
+      deckFailed = true;
+      deckFailures = 0;
+      old.doc.destroy().catch(() => {});
+      resetPdfWorker();
+      frames.clear();
+      reloadDeck();
     }
 
     async function display(target) {
@@ -502,11 +559,26 @@
       let frame;
       try {
         if (deck) {
-          frame = await cached('deck:' + target.page + ':' + w + ':' + h, () => renderPage(deck, target.page, w, h));
+          const key = 'deck:' + target.page + ':' + w + ':' + h;
+          try {
+            frame = await within(cached(key, () => renderPage(deck, target.page, w, h)), RENDER_TIMEOUT);
+            deckFailures = 0;
+          } catch (err) {
+            // A render that never finished means the copy's worker is gone: replace it right away.
+            if (err.renderTimeout) { frames.delete(key); deckFailures = Math.max(deckFailures, 1); }
+            const version = target.version ?? slide?.version;
+            if (stopped || id !== renderId || !faculty || !version || !slide?.pdf) throw err;
+            deckRenderFailed();
+            frame = await within(pageFrame({...target, version, pdf: true}, target.page, w, h), RENDER_TIMEOUT + 30000);
+          }
         } else if (target.pdf && (!faculty || !localFile || deckFailed)) {
-          frame = await pageFrame(target, target.page, w, h);
+          frame = await within(pageFrame(target, target.page, w, h), RENDER_TIMEOUT + (faculty ? 30000 : 12000));
         }
       } catch (err) {
+        if (err.renderTimeout) {
+          // Forget renders that may never finish so the retry starts clean.
+          for (const key of [...frames.keys()]) if (!key.startsWith('rendered:')) frames.delete(key);
+        }
         if (stopped || id !== renderId) return;
         if (!faculty && (err.status === 401 || err.status === 403)) {
           // Access was revoked: stop showing the lesson rather than retrying.
@@ -522,8 +594,10 @@
           if (pollParked) pollController?.abort();
           return 'stale';
         }
-        status.textContent = '교안 화면을 불러오지 못했습니다.';
-        return;
+        // Not an HTTP answer: PDF.js or the browser failed. Start a fresh worker for the retry.
+        if (!httpError(err)) resetPdfWorker();
+        showFailure();
+        return 'error';
       }
       if (!faculty && frame) liveMark?.('student-render-ready', target.version, target.page);
       while (drag && !stopped && id === renderId) await drag.done;
@@ -636,10 +710,18 @@
 
     function resize() {
       if (stopped || !slide) return;
-      if (deck && selected) display({page: selected, total: deck.doc.numPages});
-      else if (faculty) display(slide);
+      if (selected !== null && wanted?.page === selected) follow(wanted);
       else follow(slide);
     }
+
+    // Coming back from sleep, another tab or a dropped connection: redraw a page that failed.
+    function wake() {
+      if (stopped || document.visibilityState === 'hidden') return;
+      if (wanted && displayed !== wanted.page) retryNow();
+      if (faculty && !deck) reloadDeck();
+    }
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
 
     if (faculty) {
       window.addEventListener('resize', resize);
@@ -670,6 +752,8 @@
       askButton?.removeEventListener('click', askHere);
       window.removeEventListener('resize', resize);
       document.removeEventListener('fullscreenchange', resize);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
       ++renderId;
       deck?.doc.destroy();
       frames.clear();
@@ -683,7 +767,7 @@
       selected = number;
       const position = visiblePages.indexOf(number);
       // Without the whole PDF yet, the page comes from the per-page route (current page and its neighbours).
-      display({page: number, total: deck ? deck.doc.numPages : slide.total, pdf: !deck, version: slide?.version,
+      follow({page: number, total: deck ? deck.doc.numPages : slide.total, pdf: !deck, version: slide?.version,
         before: visiblePages[position - 1], after: visiblePages[position + 1]});
     }
 
@@ -699,23 +783,36 @@
       // link can take a while, and a failed download must not stop the broadcast: retry, and
       // meanwhile show and move between pages through the per-page route.
       const remote = () => api(path + '/document', {raw: true, timeout: 180000}).then(res => res.arrayBuffer()).then(loadPdf);
-      const loadDeck = attempt => (attempt === 0 && localFile ? localFile.arrayBuffer().then(loadPdf).catch(remote) : remote())
-        .then(pdf => {
-          if (stopped) return pdf.doc.destroy();
-          deck = pdf;
-          deckFailed = false;
-          if (slide && displayed !== slide.page) display(slide);
-          onState({slide, total: deck.doc.numPages});
-        })
-        .catch(() => {
-          if (stopped) return;
-          if (!deckFailed) {
-            deckFailed = true;
-            if (slide && displayed !== slide.page) display(slide);
-          }
-          if (attempt < 3) setTimeout(() => { if (!stopped && !deck) loadDeck(attempt + 1); }, [3000, 10000, 30000][attempt]);
-          else if (!displayed) status.textContent = '원본 교안 화면을 불러오지 못했습니다. 수업에 다시 접속해 주세요.';
-        });
+      let deckLoading = false;
+      let deckTimer;
+      const loadDeck = attempt => {
+        if (stopped || deck || deckLoading) return;
+        deckLoading = true;
+        clearTimeout(deckTimer);
+        (attempt === 0 && localFile ? localFile.arrayBuffer().then(loadPdf).catch(remote) : remote())
+          .then(pdf => {
+            if (stopped) return pdf.doc.destroy();
+            deck = pdf;
+            deckFailed = false;
+            deckFailures = 0;
+            if (wanted && displayed !== wanted.page) retryNow();
+            else if (slide && displayed !== slide.page) follow(slide);
+            onState({slide, total: deck.doc.numPages});
+          })
+          .catch(err => {
+            if (stopped) return;
+            if (!httpError(err)) resetPdfWorker();
+            if (!deckFailed) {
+              deckFailed = true;
+              if (wanted && displayed !== wanted.page) retryNow();
+              else if (slide && displayed !== slide.page) follow(slide);
+            }
+            // Pages keep working through the per-page route; keep trying for the whole copy.
+            deckTimer = setTimeout(() => loadDeck(attempt + 1), [3000, 10000, 30000][attempt] ?? 60000);
+          })
+          .finally(() => { deckLoading = false; });
+      };
+      reloadDeck = () => loadDeck(1);
       loadDeck(0);
     }
     return {
@@ -737,7 +834,7 @@
       reconcile: () => {
         if (!stopped) {
           selected = null;
-          display(slide || (deck && {page: 1, total: deck.doc.numPages}));
+          follow(slide || (deck && {page: 1, total: deck.doc.numPages}));
         }
       },
     };

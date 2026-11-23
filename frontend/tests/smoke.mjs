@@ -808,3 +808,14 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.equal(ctx.tokenExpiry('garbage'), null);
  console.log('OK: the live broadcast survives token expiry and a failed whole-PDF download');
 }
+{
+ // A render failure must not leave '교안 화면을 불러오지 못했습니다' on screen: every view retries.
+ const quLive = fs.readFileSync(path.join(root,'assets/qu-live.js'),'utf8');
+ assert.ok(!quLive.includes("shown === 'stale' || faculty ||"), 'the presenter view retries too');
+ assert.ok(quLive.includes('function resetPdfWorker') && quLive.includes('if (!httpError(err)) resetPdfWorker();'), 'a broken PDF.js worker is replaced');
+ assert.ok(quLive.includes('deckRenderFailed();') && quLive.includes("pageFrame({...target, version, pdf: true}"), 'whole-PDF render failures fall back to the page route');
+ assert.ok(quLive.includes('within(cached(key') && quLive.includes('RENDER_TIMEOUT'), 'hung renders time out');
+ assert.ok(quLive.includes("text: '다시 불러오기'") && quLive.includes("document.addEventListener('visibilitychange', wake)"), 'manual retry and wake-up retry');
+ assert.ok(!quLive.includes("status.textContent = '교안 화면을 불러오지 못했습니다.'"), 'no dead-end error text');
+ console.log('OK: live pages keep retrying, replace broken PDF workers and never stick on a load error');
+}
