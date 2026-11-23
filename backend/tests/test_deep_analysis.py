@@ -23,6 +23,28 @@ class DeepAnalysisTests(unittest.TestCase):
         with patch('learningx.deep_analysis.subprocess.Popen') as run:
             doc=enrich(self.source,self.out,self.engine)
         run.assert_not_called(); self.assertEqual(doc['vision_execution']['status'],'NOT_RUN')
+    def test_ocr_is_on_by_default_and_reads_korean_at_300_dpi(self):
+        (self.out/'ocr_jobs.jsonl').write_text('{"page":1}\n')
+        seen={}
+        class Run:
+            def __init__(self,command,**kw):seen['command']=command
+            def __enter__(self):return self
+            def __exit__(self,*a):return False
+            def wait(self,timeout=None):seen['timeout']=timeout;return 0
+            returncode=0
+        env={k:v for k,v in os.environ.items() if k!='NIT_OCR_ENABLED'}
+        with patch.dict(os.environ,env,clear=True), patch('learningx.deep_analysis.shutil.which',return_value='/usr/bin/tesseract'), \
+             patch('learningx.deep_analysis.subprocess.Popen',Run):
+            enrich(self.source,self.out,self.engine)
+        command=seen['command']
+        self.assertEqual(command[command.index('--language')+1],'kor+eng')
+        self.assertEqual((command[command.index('--dpi')+1],command[command.index('--max-pages')+1]),('300','20'))
+        self.assertEqual(seen['timeout'],300)
+    def test_ocr_can_be_turned_off(self):
+        (self.out/'ocr_jobs.jsonl').write_text('{"page":1}\n')
+        with patch('learningx.deep_analysis.subprocess.Popen') as run:
+            doc=enrich(self.source,self.out,self.engine)
+        run.assert_not_called(); self.assertEqual(doc['deep_analysis']['ocr']['status'],'NOT_RUN')
     def test_missing_provider_is_explicit(self):
         with patch.dict(os.environ,{'NIT_VISION_ENABLED':'1','GEMINI_API_KEY':''}):
             doc=enrich(self.source,self.out,self.engine)

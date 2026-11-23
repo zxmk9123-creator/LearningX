@@ -29,21 +29,26 @@ def _stage(source, out, engine, kind):
     total = _jobs(out, kind)
     result = {"status": "NOT_RUN" if total else "NOT_REQUIRED", "total_jobs": total,
               "completed_jobs": 0, "verified_for_coaching": False}
-    if not total or os.getenv(f"NIT_{kind.upper()}_ENABLED") != "1":
+    # OCR runs wherever its runtime is installed (the image ships Tesseract + Korean);
+    # NIT_OCR_ENABLED=0 turns it off. Vision stays opt-in (it calls an outside provider).
+    enabled = os.getenv(f"NIT_{kind.upper()}_ENABLED", "1" if kind == "ocr" else "")
+    if not total or enabled != "1":
         return result
     if kind == "vision" and not os.getenv("GEMINI_API_KEY"):
         return dict(result, status="UNAVAILABLE", reason="PROVIDER_NOT_CONFIGURED")
     if kind == "ocr" and not shutil.which("tesseract"):
         return dict(result, status="UNAVAILABLE", reason="OCR_RUNTIME_MISSING")
-    cap = _limit(f"NIT_{kind.upper()}_MAX_JOBS", 3, 20)
-    timeout = _limit(f"NIT_{kind.upper()}_TIMEOUT_SECONDS", 120, 300)
+    # A scanned lecture needs every page read: OCR defaults to the full cap.
+    cap = _limit(f"NIT_{kind.upper()}_MAX_JOBS", 20 if kind == "ocr" else 3, 20)
+    timeout = _limit(f"NIT_{kind.upper()}_TIMEOUT_SECONDS", 300 if kind == "ocr" else 120, 300)
     with tempfile.TemporaryDirectory(prefix="learningx-enrichment-") as td:
         staged = Path(td) / "parsed"
         shutil.copytree(out, staged)
         command = [sys.executable, str(engine / "scripts" / ("recover_ocr.py" if kind == "ocr" else "enrich_gemini.py")),
                    str(source), "--out", str(staged)]
         if kind == "ocr":
-            command += ["--max-pages", str(cap), "--language", os.getenv("NIT_OCR_LANGUAGE", "kor+eng")]
+            command += ["--max-pages", str(cap), "--language", os.getenv("NIT_OCR_LANGUAGE", "kor+eng"),
+                        "--dpi", str(_limit("NIT_OCR_DPI", 300, 400))]
         else:
             command += ["--kind", "vision", "--max-jobs", str(cap), "--workers", "1"]
         try:
