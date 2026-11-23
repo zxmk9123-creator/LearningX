@@ -764,3 +764,20 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(css.includes('#screen-coach.is-chat-locked .composer-wrap'), 'the composer is hidden while locked');
  console.log('OK: the question chat stays locked until the teacher opens it');
 }
+{
+ // Faculty open chosen pages for students to browse apart from the live page.
+ assert.ok(teacher.includes('id="browse-form"') && teacher.includes('id="browse-pages"') && teacher.includes('id="browse-all"'), 'teacher page-access controls');
+ assert.ok(quTeacher.includes("api(`/v1/sessions/${s.id}/browse`, { method: 'PUT', body })"), 'teacher saves the page list');
+ assert.ok(student.includes('id="student-browse"') && student.includes('id="browse-view" data-copy-protected'), 'student viewer is copy-protected');
+ assert.ok(quStudent.includes('#student-browse [data-copy-protected]'), 'copying from the viewer is blocked');
+ assert.ok(quStudent.includes('/browse/${page}`, { raw: true }'), 'pages load one at a time');
+ const quLive = fs.readFileSync(path.join(root,'assets/qu-live.js'),'utf8');
+ assert.ok(quLive.includes('window.QU.renderPdfImage'), 'standalone pages render as images without a text layer');
+ // The page-range parser accepts ranges and rejects junk.
+ const start = quTeacher.indexOf('function formatPages'), end = quTeacher.indexOf('function paintBrowse');
+ const ctx = {}; vm.createContext(ctx); vm.runInContext(quTeacher.slice(start, end) + ';this.formatPages=formatPages;this.parsePages=parsePages;', ctx);
+ assert.deepEqual([...ctx.parsePages('8, 1-3 5~6').pages], [1,2,3,5,6,8]);
+ assert.equal(ctx.formatPages([1,2,3,5,6,8]), '1-3, 5-6, 8');
+ assert.ok(ctx.parsePages('1-x').error && ctx.parsePages('5-2').error);
+ console.log('OK: faculty choose pages students can browse apart from the live page');
+}

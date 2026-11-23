@@ -60,6 +60,26 @@
     return frame;
   }
 
+  // One standalone page (for example a page a student opens on their own): an image only,
+  // without a selectable text layer, drawn to fit the given box.
+  window.QU.renderPdfImage = async (bytes, width, height, label) => {
+    const pdf = await loadPdf(bytes);
+    try {
+      const page = await pdf.doc.getPage(1);
+      const natural = page.getViewport({scale: 1});
+      const viewport = page.getViewport({scale: Math.min(width / natural.width, height / natural.height)});
+      const ratio = Math.min(devicePixelRatio || 1, 2);
+      const canvas = el('canvas', {width: Math.ceil(viewport.width * ratio), height: Math.ceil(viewport.height * ratio),
+        role: 'img', 'aria-label': label});
+      canvas.style.width = viewport.width + 'px';
+      canvas.style.height = viewport.height + 'px';
+      await page.render({canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0]}).promise;
+      return canvas;
+    } finally {
+      pdf.doc.destroy();
+    }
+  };
+
   // Start loading the renderer during entry/review so opening a slide can overlap
   // authentication and network I/O with module loading.
   warmPdf().catch(() => {});

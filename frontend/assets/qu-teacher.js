@@ -756,6 +756,7 @@
     toggle.className = s.chat_open ? 'btn block' : 'btn primary block';
     toggle.setAttribute('aria-pressed', String(!!s.chat_open));
     $('chat-state').textContent = s.chat_open ? '열림' : '잠김';
+    paintBrowse(s.browse_pages || []);
     $('chat-hint').textContent = s.chat_open ? '학생이 질문을 쓰고 AI 코칭을 받을 수 있어요. 닫으면 새 질문과 전송이 멈춰요.'
       : '질문 시간이 되면 열어 주세요. 열기 전에는 학생이 교안만 볼 수 있어요.';
     $('live-joined').textContent = `${s.participants || 0}명`;
@@ -863,6 +864,76 @@
   async function act(path) {
     try { await api(path, { method: 'POST' }); await refreshBoard(); } catch (err) { globalError(err); }
   }
+
+  /* 학생 교안 열람 허용 쪽 */
+  function formatPages(pages) {
+    const parts = [];
+    for (let i = 0; i < pages.length; i++) {
+      let j = i;
+      while (j + 1 < pages.length && pages[j + 1] === pages[j] + 1) j++;
+      parts.push(j > i ? `${pages[i]}-${pages[j]}` : String(pages[i]));
+      i = j;
+    }
+    return parts.join(', ');
+  }
+
+  function parsePages(text) {
+    const pages = new Set();
+    for (const token of text.split(/[,\s]+/).filter(Boolean)) {
+      const m = token.match(/^(\d{1,5})(?:[-~](\d{1,5}))?$/);
+      if (!m) return { error: `“${token}”은(는) 쪽 번호로 읽을 수 없어요. 예: 1-5, 8` };
+      const a = Number(m[1]); const b = m[2] ? Number(m[2]) : a;
+      if (!a || !b || b < a) return { error: `“${token}”의 범위를 확인해 주세요.` };
+      if (b - a > 2000 || pages.size + (b - a) > 2000) return { error: '한 번에 2,000쪽까지 열 수 있어요.' };
+      for (let p = a; p <= b; p++) pages.add(p);
+    }
+    return { pages: [...pages].sort((x, y) => x - y) };
+  }
+
+  function paintBrowse(pages) {
+    const input = $('browse-pages');
+    $('browse-state').textContent = pages.length ? `${pages.length}쪽 허용` : '허용 안 함';
+    const shown = formatPages(pages);
+    if (document.activeElement !== input && input.dataset.dirty !== '1') input.value = shown;
+    input.dataset.saved = shown;
+  }
+
+  async function saveBrowse(body, btn) {
+    const s = state.live.session;
+    setError($('browse-hint'), null);
+    busy(btn, true, '적용 중…');
+    try {
+      const updated = await api(`/v1/sessions/${s.id}/browse`, { method: 'PUT', body });
+      Object.assign(state.live.session, updated);
+      $('browse-pages').dataset.dirty = '';
+      busy(btn, false);
+      paintBrowse(updated.browse_pages);
+      $('browse-pages').value = formatPages(updated.browse_pages);
+      $('browse-hint').className = 'sub';
+      $('browse-hint').textContent = updated.browse_pages.length
+        ? `학생이 ${formatPages(updated.browse_pages)}쪽을 넘겨볼 수 있어요.` : '학생 교안 열람을 모두 닫았어요.';
+      $('browse-hint').hidden = false;
+    } catch (err) {
+      busy(btn, false);
+      const outside = err.status === 422 && err.detail?.pages;
+      $('browse-hint').className = 'sub error';
+      $('browse-hint').textContent = outside ? `${outside.join(', ')}쪽은 없거나 숨긴 쪽이라 열 수 없어요.` : (err.message || '적용하지 못했어요.');
+      $('browse-hint').hidden = false;
+    }
+  }
+
+  $('browse-pages').addEventListener('input', () => { $('browse-pages').dataset.dirty = '1'; });
+  $('browse-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const parsed = parsePages($('browse-pages').value.trim());
+    if (parsed.error) {
+      $('browse-hint').className = 'sub error'; $('browse-hint').textContent = parsed.error; $('browse-hint').hidden = false;
+      return;
+    }
+    saveBrowse({ pages: parsed.pages }, $('browse-save'));
+  });
+  $('browse-all').addEventListener('click', () => saveBrowse({ all: true }, $('browse-all')));
+  $('browse-clear').addEventListener('click', () => saveBrowse({ pages: [] }, $('browse-clear')));
 
   $('chat-toggle').addEventListener('click', async () => {
     const s = state.live.session;

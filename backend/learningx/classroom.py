@@ -94,6 +94,25 @@ def chat_open(db, session_id: str) -> bool:
     return bool(row and row.open)
 
 
+class SessionPageAccess(Base):
+    """Pages of the class material students may open on their own, apart from the
+    page being shared live. Faculty choose them; no row means none. A separate
+    table keeps class_sessions unchanged (create_all adds tables, not columns)."""
+    __tablename__ = "session_page_access"
+    session_id: Mapped[str] = mapped_column(ForeignKey("class_sessions.id"), primary_key=True)
+    pages: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    changed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False)
+
+
+MAX_BROWSE_PAGES = 2000
+
+
+def browse_pages(db, session_id: str) -> list[int]:
+    row = db.get(SessionPageAccess, session_id)
+    return json.loads(row.pages) if row else []
+
+
 class SessionParticipant(Base):
     __tablename__ = "session_participants"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
@@ -170,6 +189,11 @@ class SessionState(BaseModel):
 
 class ChatAccess(BaseModel):
     open: bool
+
+
+class PageAccess(BaseModel):
+    pages: list[Annotated[int, Field(ge=1, le=100000)]] = Field(default_factory=list, max_length=MAX_BROWSE_PAGES)
+    all: bool = False
 
 
 class JoinRequest(BaseModel):
@@ -390,10 +414,13 @@ def _public_sessions(db, sessions, faculty=False) -> list[dict]:
                                  "questions_revised": revised, "questions_projected": projected}
     opened = {row.session_id for row in db.query(SessionChatAccess.session_id)
               .filter(SessionChatAccess.session_id.in_(ids), SessionChatAccess.open.is_(True))}
+    browsable = dict(db.query(SessionPageAccess.session_id, SessionPageAccess.pages)
+                     .filter(SessionPageAccess.session_id.in_(ids)))
     result = []
     for s in sessions:
         data = {"id": s.id, "course_id": s.course_id, "course_title": titles.get(s.course_id, ""),
                 "status": s.status, "chat_open": s.status != "CLOSED" and s.id in opened,
+                "browse_pages": json.loads(browsable.get(s.id, "[]")) if s.status != "CLOSED" else [],
                 "created_at": _iso(s.created_at), "closed_at": _iso(s.closed_at)}
         if faculty:
             item = stats[s.id]
@@ -547,6 +574,46 @@ def set_chat_access(session_id: str, data: ChatAccess, db: Session = Depends(ses
     return _public_session(db, s, faculty=True)
 
 
+@router.put("/sessions/{session_id}/browse")
+def set_browse_pages(session_id: str, data: PageAccess, db: Session = Depends(session), user: User = Depends(actor)):
+    """Faculty choose which material pages students may open apart from the live page."""
+    s = _faculty_session(db, session_id, user)
+    material = db.get(Material, s.material_id)
+    visible = visible_pages(material)
+    db.refresh(s, with_for_update=True)
+    if s.status == "CLOSED":
+        raise HTTPException(409, "Session already closed")
+    pages = visible if data.all else sorted(set(data.pages))
+    outside = sorted(set(pages) - set(visible))
+    if outside:
+        raise HTTPException(422, {"code": "PAGES_NOT_AVAILABLE", "pages": outside[:20]})
+    row = db.get(SessionPageAccess, s.id)
+    if row is None:
+        db.add(SessionPageAccess(session_id=s.id, pages=json.dumps(pages), changed_by=user.id))
+    else:
+        row.pages, row.changed_by, row.changed_at = json.dumps(pages), user.id, now()
+    _audit(db, user.id, s.course_id, "browse_pages_set", s.material_id, detail=f"pages={len(pages)}")
+    db.commit()
+    notify(s.id)
+    return {**_public_session(db, s, faculty=True), "visible_pages": visible}
+
+
+@router.get("/sessions/{session_id}/browse/{page}")
+def browse_page(session_id: str, page: int, db: Session = Depends(session),
+                credentials: HTTPAuthorizationCredentials | None = Depends(scheme)):
+    """One page a student may open on their own; faculty may open any visible page."""
+    _, current, faculty = _live_reader(db, credentials, session_id)
+    if current.status == "CLOSED":
+        raise HTTPException(409, "Class has ended")
+    material = db.get(Material, current.material_id)
+    allowed = visible_pages(material) if faculty else browse_pages(db, session_id)
+    if page not in allowed:
+        raise HTTPException(403, "This page is not open for browsing")
+    db.expunge(material)
+    db.rollback()
+    return _pdf_response(page_pdf(material, page))
+
+
 def _live_reader(db, credentials, session_id, *, include_page=False):
     claims = decode_token(credentials)
     query = (
@@ -681,7 +748,7 @@ def _slide_metadata(slide, version=""):
 def _snapshot(db, current, user, faculty, version, cursor=None):
     session_id = current.id
     if current.status == "CLOSED":
-        return {"status": current.status, "chat_open": False, "slide": None, "index": []}
+        return {"status": current.status, "chat_open": False, "browse_pages": [], "slide": None, "index": []}
     slide = db.get(LiveSlide, session_id, options=[undefer(LiveSlide.content)])
     query = db.query(SessionQuestion.id, SessionQuestion.level, QuestionSlide.page,
                      SessionQuestion.latest_text, QuestionAnchor.location).join(
@@ -742,7 +809,8 @@ def _snapshot(db, current, user, faculty, version, cursor=None):
                 LiveTransition.position > prior.position,
                 LiveTransition.position <= latest.position,
             ).order_by(LiveTransition.position).limit(32)]
-    return {"status": current.status, "chat_open": chat_open(db, session_id), "slide": snapshot, "index": index,
+    return {"status": current.status, "chat_open": chat_open(db, session_id),
+            "browse_pages": browse_pages(db, session_id), "slide": snapshot, "index": index,
             "confusion": confusion, "transitions": transitions}
 
 

@@ -10,7 +10,7 @@
     if (event.target?.closest?.('input, textarea') || event.target?.isContentEditable) return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
-    const protectedNodes = [...document.querySelectorAll('#student-slide [data-copy-protected]')];
+    const protectedNodes = [...document.querySelectorAll('#student-slide [data-copy-protected], #student-browse [data-copy-protected]')];
     for (let i = 0; i < selection.rangeCount; i++) {
       const range = selection.getRangeAt(i);
       if (protectedNodes.some(node => range.intersectsNode(node))) {
@@ -132,6 +132,7 @@
     liveView = null;
     if (expanded()) collapseSlide();
     slidePanel.hidden = true;
+    applyBrowse([]);
   }
 
   function setStage(stage) {
@@ -512,6 +513,8 @@
     applyChat(chatOpen());
     applyStatus(st.session.status);
     stopPoll();
+    browse.live = initial?.slide?.page || null;
+    applyBrowse(st.session.browse_pages || []);
     liveView = window.QU.createLiveView({
       api, session: st.session.id, panel: $('student-slide'), initial,
       onAnchor: ({page, anchor}) => {
@@ -539,7 +542,9 @@
         }
         return true;
       },
-      onState: ({status, chat_open: open}) => {
+      onState: ({status, chat_open: open, browse_pages: pages, slide}) => {
+        if (slide?.page) browse.live = slide.page;
+        if (Array.isArray(pages)) applyBrowse(pages);
         if (typeof open === 'boolean' && open !== chatOpen()) applyChat(open);
         if (status && status !== st.session.status) applyStatus(status);
       },
@@ -787,6 +792,90 @@
   }
   $('mine-back').addEventListener('click', () => { showScreen('coach'); updateComposer(); });
 
+  /* ---------- 교안 넘겨보기 (교수자가 연 쪽만) ---------- */
+  const browse = { pages: [], page: null, live: null, open: false, request: 0 };
+
+  function applyBrowse(pages) {
+    const same = pages.length === browse.pages.length && pages.every((p, i) => p === browse.pages[i]);
+    if (same) return;
+    browse.pages = pages.slice();
+    const button = $('browse-open');
+    button.hidden = !pages.length;
+    button.textContent = `교안 넘겨보기 (${pages.length}쪽)`;
+    const select = $('browse-select');
+    select.replaceChildren(...pages.map(p => el('option', { value: String(p), text: `${p}쪽` })));
+    if (!pages.length) { closeBrowse(); return; }
+    if (browse.open) showBrowsePage(pages.includes(browse.page) ? browse.page : nearestBrowsePage(browse.page));
+  }
+
+  function nearestBrowsePage(target) {
+    if (!browse.pages.length) return null;
+    if (target == null) return browse.pages[0];
+    return browse.pages.reduce((best, p) => Math.abs(p - target) < Math.abs(best - target) ? p : best, browse.pages[0]);
+  }
+
+  function openBrowse() {
+    if (!browse.pages.length) return;
+    browse.open = true;
+    $('student-browse').hidden = false;
+    $('browse-open').setAttribute('aria-expanded', 'true');
+    showBrowsePage(browse.pages.includes(browse.live) ? browse.live : nearestBrowsePage(browse.page ?? browse.live));
+    $('student-browse').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  }
+
+  function closeBrowse() {
+    browse.open = false;
+    browse.request++;
+    $('student-browse').hidden = true;
+    $('browse-open').setAttribute('aria-expanded', 'false');
+    $('browse-view').replaceChildren();
+  }
+
+  async function showBrowsePage(page) {
+    if (page == null) return;
+    browse.page = page;
+    const index = browse.pages.indexOf(page);
+    $('browse-select').value = String(page);
+    $('browse-prev').disabled = index <= 0;
+    $('browse-next').disabled = index < 0 || index >= browse.pages.length - 1;
+    $('browse-live').hidden = !browse.live || !browse.pages.includes(browse.live) || browse.live === page;
+    const request = ++browse.request;
+    const view = $('browse-view');
+    $('browse-status').textContent = `${page}쪽을 불러오는 중…`;
+    try {
+      const bytes = await api(`/v1/sessions/${st.session.id}/browse/${page}`, { raw: true }).then(r => r.arrayBuffer());
+      if (request !== browse.request) return;
+      const width = Math.max(240, view.clientWidth - 24);
+      const canvas = await window.QU.renderPdfImage(bytes, width, Math.max(320, innerHeight * 0.8), `${page}쪽 교안`);
+      if (request !== browse.request) return;
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+      view.replaceChildren(canvas);
+      $('browse-status').textContent = `${page}쪽 · ${index + 1} / ${browse.pages.length}`;
+    } catch (err) {
+      if (request !== browse.request) return;
+      view.replaceChildren();
+      $('browse-status').textContent = err.status === 403 ? '교수자가 이 쪽의 열람을 닫았어요.'
+        : err.status === 409 ? '수업이 끝나 교안을 볼 수 없어요.' : '교안을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    }
+  }
+
+  function stepBrowse(delta) {
+    const next = browse.pages[browse.pages.indexOf(browse.page) + delta];
+    if (next != null) showBrowsePage(next);
+  }
+
+  $('browse-open').addEventListener('click', () => (browse.open ? closeBrowse() : openBrowse()));
+  $('browse-close').addEventListener('click', closeBrowse);
+  $('browse-prev').addEventListener('click', () => stepBrowse(-1));
+  $('browse-next').addEventListener('click', () => stepBrowse(1));
+  $('browse-live').addEventListener('click', () => showBrowsePage(browse.live));
+  $('browse-select').addEventListener('change', e => showBrowsePage(Number(e.target.value)));
+  $('student-browse').addEventListener('keydown', e => {
+    if (e.target.closest('select')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepBrowse(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepBrowse(1); }
+  });
+
   /* ---------- 수업 상태 ---------- */
   function applyChat(open) {
     const wasOpen = chatOpen();
@@ -818,6 +907,7 @@
     if (!st.session || !token) return;
     try {
       const s = await api(`/v1/sessions/${st.session.id}`);
+      if (Array.isArray(s.browse_pages)) applyBrowse(s.browse_pages);
       if (s.chat_open !== chatOpen()) applyChat(s.chat_open === true);
       if (s.status !== st.session.status) applyStatus(s.status);
     } catch (_) { /* transient; next tick retries */ }

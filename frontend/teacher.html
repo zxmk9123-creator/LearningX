@@ -164,6 +164,16 @@
           <p class="sub" id="chat-hint">질문 시간이 되면 열어 주세요. 열기 전에는 학생이 교안만 볼 수 있어요.</p>
         </div>
         <hr>
+        <form class="chat-gate" id="browse-form" novalidate>
+          <div class="row between"><label class="sub" for="browse-pages">학생 교안 열람</label><b id="browse-state">허용 안 함</b></div>
+          <input class="input" id="browse-pages" type="text" inputmode="numeric" autocomplete="off" maxlength="400"
+            placeholder="예: 1-5, 8" aria-describedby="browse-hint">
+          <div class="row"><button class="btn sm primary" type="submit" id="browse-save">적용</button>
+            <button class="btn sm" type="button" id="browse-all">전체 허용</button>
+            <button class="btn sm" type="button" id="browse-clear">모두 닫기</button></div>
+          <p class="sub" id="browse-hint">허용한 쪽은 학생이 송출 화면과 별개로 넘겨볼 수 있어요. 숨긴 슬라이드는 열리지 않아요.</p>
+        </form>
+        <hr>
         <button class="btn block" type="button" id="end-class">수업 종료</button>
       </aside>
       <section class="stack" aria-label="들어온 질문">

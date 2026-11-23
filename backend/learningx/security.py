@@ -65,6 +65,7 @@ def _restrict_classroom_actor(request, claims, db, user):
         ("GET", "/v1/sessions/{session_id}/live"),
         ("PUT", "/v1/sessions/{session_id}/live/confusion"),
         ("GET", "/v1/sessions/{session_id}/live/page/{version}"),
+        ("GET", "/v1/sessions/{session_id}/browse/{page}"),
         ("POST", "/v1/sessions/{session_id}/questions"),
         ("POST", "/v1/session-questions/{row_id}/revisions"),
         ("POST", "/v1/session-questions/{row_id}/submit"),
