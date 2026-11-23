@@ -75,9 +75,16 @@ def _stage(source, out, engine, kind):
         return dict(result, status="UNAVAILABLE", reason="PROVIDER_NOT_CONFIGURED")
     if kind == "ocr" and not shutil.which("tesseract"):
         return dict(result, status="UNAVAILABLE", reason="OCR_RUNTIME_MISSING")
-    # A scanned lecture needs every page read: OCR defaults to the full cap.
-    cap = _limit(f"NIT_{kind.upper()}_MAX_JOBS", 20 if kind == "ocr" else 3, 20)
-    timeout = _limit(f"NIT_{kind.upper()}_TIMEOUT_SECONDS", 300 if kind == "ocr" else 120, 300)
+    if kind == "ocr":
+        # A scanned lecture needs every page read. The time budget grows with the pages
+        # (about 0.8 CPU-seconds a page, so ~8 s on a 0.1 vCPU worker) up to 30 minutes;
+        # the ingest lease is renewed by its heartbeat meanwhile.
+        cap = _limit("NIT_OCR_MAX_JOBS", 500, 500)
+        per_page = _limit("NIT_OCR_SECONDS_PER_PAGE", 15, 120)
+        timeout = _limit("NIT_OCR_TIMEOUT_SECONDS", min(1800, 60 + per_page * min(total, cap)), 1800)
+    else:
+        cap = _limit(f"NIT_{kind.upper()}_MAX_JOBS", 3, 20)
+        timeout = _limit(f"NIT_{kind.upper()}_TIMEOUT_SECONDS", 120, 300)
     with tempfile.TemporaryDirectory(prefix="learningx-enrichment-") as td:
         staged = Path(td) / "parsed"
         shutil.copytree(out, staged)
@@ -88,7 +95,7 @@ def _stage(source, out, engine, kind):
                              staged, out, timeout, kind, total, min(total, cap), result)
         # OCR goes a few pages at a time inside one time budget, keeping every finished
         # round: a slow worker CPU then yields the first pages instead of nothing.
-        step = _limit("NIT_OCR_PAGES_PER_RUN", 4, 20)
+        step = _limit("NIT_OCR_PAGES_PER_RUN", 8, 50)
         deadline = time.monotonic() + timeout
         options = ["--language", os.getenv("NIT_OCR_LANGUAGE", "kor+eng"), "--dpi", str(_limit("NIT_OCR_DPI", 200, 400))]
         pages, latest = 0, result

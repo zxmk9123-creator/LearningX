@@ -51,13 +51,19 @@ class DeepAnalysisTests(unittest.TestCase):
     def test_ocr_is_on_by_default_and_reads_korean_in_rounds(self):
         self.ten_scanned_pages()
         Run,calls=self.fake_ocr()
+        seen=[]
+        original_wait=Run.wait
+        def wait(run,timeout=None):
+            seen.append(timeout);return original_wait(run,timeout)
+        Run.wait=wait
         env={k:v for k,v in os.environ.items() if k!='NIT_OCR_ENABLED'}
         with patch.dict(os.environ,env,clear=True), patch('learningx.deep_analysis.shutil.which',return_value='/usr/bin/tesseract'), \
              patch('learningx.deep_analysis.subprocess.Popen',Run):
             doc=enrich(self.source,self.out,self.engine)
         self.assertEqual(doc['deep_analysis']['ocr']['status'],'COMPLETE')
-        self.assertEqual([c[c.index('--max-pages')+1] for c in calls],['4','8','10'])
+        self.assertEqual([c[c.index('--max-pages')+1] for c in calls],['8','10'])
         self.assertEqual((calls[0][calls[0].index('--language')+1],calls[0][calls[0].index('--dpi')+1]),('kor+eng','200'))
+        self.assertTrue(200<seen[0]<=210,'budget = 60 s + 15 s a page for 10 pages')
     def test_a_slow_worker_keeps_the_pages_it_finished(self):
         self.ten_scanned_pages()
         Run,calls=self.fake_ocr(slow_from=2)
@@ -65,8 +71,8 @@ class DeepAnalysisTests(unittest.TestCase):
              patch('learningx.deep_analysis.subprocess.Popen',Run), patch('learningx.deep_analysis.os.killpg'):
             doc=enrich(self.source,self.out,self.engine)
         ocr=doc['deep_analysis']['ocr']
-        self.assertEqual((ocr['status'],ocr['completed_jobs'],ocr['remaining_jobs']),('PARTIAL',4,6))
-        self.assertEqual(sum(p.get('ocr_state')=='complete' for p in doc['pages']),4)
+        self.assertEqual((ocr['status'],ocr['completed_jobs'],ocr['remaining_jobs']),('PARTIAL',8,2))
+        self.assertEqual(sum(p.get('ocr_state')=='complete' for p in doc['pages']),8)
     def test_ocr_can_be_turned_off(self):
         (self.out/'ocr_jobs.jsonl').write_text('{"page":1}\n')
         with patch('learningx.deep_analysis.subprocess.Popen') as run:
