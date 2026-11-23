@@ -23,23 +23,50 @@ class DeepAnalysisTests(unittest.TestCase):
         with patch('learningx.deep_analysis.subprocess.Popen') as run:
             doc=enrich(self.source,self.out,self.engine)
         run.assert_not_called(); self.assertEqual(doc['vision_execution']['status'],'NOT_RUN')
-    def test_ocr_is_on_by_default_and_reads_korean_at_300_dpi(self):
-        (self.out/'ocr_jobs.jsonl').write_text('{"page":1}\n')
-        seen={}
+    def fake_ocr(self, slow_from=None):
+        """Stand-in for recover_ocr.py: marks the first --max-pages pages done, or hangs."""
+        calls=[]
+        test=self
         class Run:
-            def __init__(self,command,**kw):seen['command']=command
+            def __init__(self,command,**kw):
+                self.command=command;calls.append(command);self.pid=0
             def __enter__(self):return self
             def __exit__(self,*a):return False
-            def wait(self,timeout=None):seen['timeout']=timeout;return 0
+            def wait(self,timeout=None):
+                pages=int(self.command[self.command.index('--max-pages')+1])
+                if slow_from is not None and len(calls)>=slow_from and timeout is not None:
+                    raise __import__('subprocess').TimeoutExpired(self.command,timeout)
+                staged=Path(self.command[self.command.index('--out')+1])
+                doc=json.loads((staged/'document.json').read_text())
+                for page in doc['pages'][:pages]:page['ocr_state']='complete'
+                (staged/'document.json').write_text(json.dumps(doc))
+                (staged/'ocr_report.json').write_text(json.dumps({'source_sha256':'abc','failed':[]}))
+                return 0
             returncode=0
+        return Run,calls
+    def ten_scanned_pages(self):
+        self.doc['pages']=[{'page':n,'blocks':[]} for n in range(1,11)]
+        (self.out/'document.json').write_text(json.dumps(self.doc))
+        (self.out/'ocr_jobs.jsonl').write_text(''.join(f'{{"page":{n}}}\n' for n in range(1,11)))
+    def test_ocr_is_on_by_default_and_reads_korean_in_rounds(self):
+        self.ten_scanned_pages()
+        Run,calls=self.fake_ocr()
         env={k:v for k,v in os.environ.items() if k!='NIT_OCR_ENABLED'}
         with patch.dict(os.environ,env,clear=True), patch('learningx.deep_analysis.shutil.which',return_value='/usr/bin/tesseract'), \
              patch('learningx.deep_analysis.subprocess.Popen',Run):
-            enrich(self.source,self.out,self.engine)
-        command=seen['command']
-        self.assertEqual(command[command.index('--language')+1],'kor+eng')
-        self.assertEqual((command[command.index('--dpi')+1],command[command.index('--max-pages')+1]),('300','20'))
-        self.assertEqual(seen['timeout'],300)
+            doc=enrich(self.source,self.out,self.engine)
+        self.assertEqual(doc['deep_analysis']['ocr']['status'],'COMPLETE')
+        self.assertEqual([c[c.index('--max-pages')+1] for c in calls],['4','8','10'])
+        self.assertEqual((calls[0][calls[0].index('--language')+1],calls[0][calls[0].index('--dpi')+1]),('kor+eng','200'))
+    def test_a_slow_worker_keeps_the_pages_it_finished(self):
+        self.ten_scanned_pages()
+        Run,calls=self.fake_ocr(slow_from=2)
+        with patch.dict(os.environ,{'NIT_OCR_ENABLED':'1'}), patch('learningx.deep_analysis.shutil.which',return_value='/usr/bin/tesseract'), \
+             patch('learningx.deep_analysis.subprocess.Popen',Run), patch('learningx.deep_analysis.os.killpg'):
+            doc=enrich(self.source,self.out,self.engine)
+        ocr=doc['deep_analysis']['ocr']
+        self.assertEqual((ocr['status'],ocr['completed_jobs'],ocr['remaining_jobs']),('PARTIAL',4,6))
+        self.assertEqual(sum(p.get('ocr_state')=='complete' for p in doc['pages']),4)
     def test_ocr_can_be_turned_off(self):
         (self.out/'ocr_jobs.jsonl').write_text('{"page":1}\n')
         with patch('learningx.deep_analysis.subprocess.Popen') as run:

@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def _limit(name, default, maximum):
@@ -23,6 +24,42 @@ def _limit(name, default, maximum):
 def _jobs(out, kind):
     path = out / f"{kind}_jobs.jsonl"
     return sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines()) if path.exists() else 0
+
+
+def _run_once(command, staged, out, timeout, kind, total, attempted, result):
+    """One stage run in the staged copy; promote it to ``out`` only after a valid report."""
+    try:
+        with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              start_new_session=True) as run:
+            try:
+                run.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(run.pid, signal.SIGKILL)
+                run.wait()
+                raise
+        report_path = staged / ("ocr_report.json" if kind == "ocr" else "vision_execution_report.json")
+        if run.returncode not in (0, 1) or not report_path.exists():
+            return dict(result, status="FAILED", reason="STAGE_EXECUTION_FAILED")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if report.get("source_sha256") != json.loads((out / "document.json").read_text())["source"]["sha256"]:
+            return dict(result, status="FAILED", reason="SOURCE_MISMATCH")
+        document = json.loads((staged / "document.json").read_text(encoding="utf-8"))
+        original = json.loads((out / "document.json").read_text(encoding="utf-8"))
+        if document["source"]["sha256"] != original["source"]["sha256"]:
+            return dict(result, status="FAILED", reason="SOURCE_MISMATCH")
+        failed = len(report.get("failed", []))
+        completed = (sum(page.get("ocr_state") in ("complete", "empty") for page in document["pages"])
+                     if kind == "ocr" else report.get("success", 0) + report.get("cached", 0))
+        done = dict(result, status="COMPLETE" if completed == total else "PARTIAL" if completed else "FAILED",
+                    completed_jobs=completed, attempted_jobs=attempted, failed_jobs=failed,
+                    remaining_jobs=max(0, total - completed))
+        # No enrichment can set the native evidence signature or approval state.
+        shutil.copytree(staged, out, dirs_exist_ok=True)
+        return done
+    except subprocess.TimeoutExpired:
+        return dict(result, status="FAILED", reason="STAGE_TIMEOUT")
+    except (OSError, ValueError, KeyError, TypeError):
+        return dict(result, status="FAILED", reason="INVALID_STAGE_REPORT")
 
 
 def _stage(source, out, engine, kind):
@@ -44,45 +81,28 @@ def _stage(source, out, engine, kind):
     with tempfile.TemporaryDirectory(prefix="learningx-enrichment-") as td:
         staged = Path(td) / "parsed"
         shutil.copytree(out, staged)
-        command = [sys.executable, str(engine / "scripts" / ("recover_ocr.py" if kind == "ocr" else "enrich_gemini.py")),
-                   str(source), "--out", str(staged)]
-        if kind == "ocr":
-            command += ["--max-pages", str(cap), "--language", os.getenv("NIT_OCR_LANGUAGE", "kor+eng"),
-                        "--dpi", str(_limit("NIT_OCR_DPI", 300, 400))]
-        else:
-            command += ["--kind", "vision", "--max-jobs", str(cap), "--workers", "1"]
-        try:
-            with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                  start_new_session=True) as run:
-                try:
-                    run.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    os.killpg(run.pid, signal.SIGKILL)
-                    run.wait()
-                    raise
-            report_path = staged / ("ocr_report.json" if kind == "ocr" else "vision_execution_report.json")
-            if run.returncode not in (0, 1) or not report_path.exists():
-                return dict(result, status="FAILED", reason="STAGE_EXECUTION_FAILED")
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-            if report.get("source_sha256") != json.loads((out / "document.json").read_text())["source"]["sha256"]:
-                return dict(result, status="FAILED", reason="SOURCE_MISMATCH")
-            document = json.loads((staged / "document.json").read_text(encoding="utf-8"))
-            original = json.loads((out / "document.json").read_text(encoding="utf-8"))
-            if document["source"]["sha256"] != original["source"]["sha256"]:
-                return dict(result, status="FAILED", reason="SOURCE_MISMATCH")
-            attempted = min(total, cap)
-            failed = len(report.get("failed", []))
-            completed = (sum(page.get("ocr_state") in ("complete", "empty") for page in document["pages"])
-                         if kind == "ocr" else report.get("success", 0) + report.get("cached", 0))
-            result.update(status="COMPLETE" if completed == total else "PARTIAL" if completed else "FAILED",
-                          completed_jobs=completed, attempted_jobs=attempted, failed_jobs=failed,
-                          remaining_jobs=max(0, total - completed))
-            # No enrichment can set the native evidence signature or approval state.
-            shutil.copytree(staged, out, dirs_exist_ok=True)
-        except subprocess.TimeoutExpired:
-            return dict(result, status="FAILED", reason="STAGE_TIMEOUT")
-        except (OSError, ValueError, KeyError, TypeError):
-            return dict(result, status="FAILED", reason="INVALID_STAGE_REPORT")
+        base = [sys.executable, str(engine / "scripts" / ("recover_ocr.py" if kind == "ocr" else "enrich_gemini.py")),
+                str(source), "--out", str(staged)]
+        if kind != "ocr":
+            return _run_once(base + ["--kind", "vision", "--max-jobs", str(cap), "--workers", "1"],
+                             staged, out, timeout, kind, total, min(total, cap), result)
+        # OCR goes a few pages at a time inside one time budget, keeping every finished
+        # round: a slow worker CPU then yields the first pages instead of nothing.
+        step = _limit("NIT_OCR_PAGES_PER_RUN", 4, 20)
+        deadline = time.monotonic() + timeout
+        options = ["--language", os.getenv("NIT_OCR_LANGUAGE", "kor+eng"), "--dpi", str(_limit("NIT_OCR_DPI", 200, 400))]
+        pages, latest = 0, result
+        while pages < min(total, cap):
+            remaining = deadline - time.monotonic()
+            if remaining < 5:
+                break
+            pages = min(pages + step, total, cap)
+            attempt = _run_once(base + ["--max-pages", str(pages)] + options, staged, out, remaining,
+                                kind, total, pages, result)
+            if attempt.get("reason"):  # failed round: keep what earlier rounds produced
+                return latest if latest is not result else attempt
+            latest = attempt
+        return latest
     return result
 
 
