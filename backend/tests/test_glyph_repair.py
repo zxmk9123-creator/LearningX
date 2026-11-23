@@ -150,3 +150,35 @@ class Latin1NoiseGateTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LiveViewTests(unittest.TestCase):
+    """The live view (teacher document, student pages) shows the repaired copy."""
+
+    def test_live_pages_carry_real_hangul_text(self):
+        import os
+        os.environ.setdefault("NIT_JWT_SECRET", "test-only-signing-key-12345678901234567890")
+        from types import SimpleNamespace
+        from learningx import live_slides
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / 'source.pdf'
+            quartz_like_pdf(original)
+            nit.ingest(original, root / 'parsed')
+            self.assertTrue((root / 'parsed' / nit.LIVE_TEXT).is_file())
+            material = SimpleNamespace(id='m-live', course_id='c-live', out_dir=str(root / 'parsed'), filename='lesson.pdf')
+            live_slides._source.cache_clear()
+            whole = live_slides.source_pdf(material)
+            page = live_slides._load_page(live_slides._identity(material), 1)
+            for data in (whole, page):
+                with pymupdf.open(stream=data, filetype='pdf') as doc:
+                    self.assertEqual(' '.join(doc[0].get_text().split()), SENTENCE)
+
+    def test_an_ordinary_pdf_keeps_its_original_for_the_live_view(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc = pymupdf.open()
+            doc.new_page().insert_text((72, 72), '정상적인 한국어 교안 문장입니다', fontname='korea')
+            doc.save(root / 'source.pdf')
+            nit.ingest(root / 'source.pdf', root / 'parsed')
+            self.assertFalse((root / 'parsed' / nit.LIVE_TEXT).exists())

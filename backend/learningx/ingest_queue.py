@@ -380,7 +380,9 @@ def _run_claimed_job(claimed, attempt, prepare_live_preview):
                 if prepare_live_preview and (ext == ".pdf" or preview_ready):
                     from .live_slides import prepare_live_pages
                     advance("live_pages")
-                    source_pdf = original if ext == ".pdf" else parsed / "live-preview.pdf"
+                    repaired = parsed / nit.LIVE_TEXT
+                    source_pdf = ((repaired if repaired.is_file() else original) if ext == ".pdf"
+                                  else parsed / "live-preview.pdf")
                     try:
                         prepared_pages = prepare_live_pages(root, source_pdf, document["pages"])
                     except Exception:

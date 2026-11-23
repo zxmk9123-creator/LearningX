@@ -105,6 +105,9 @@ def _source(identity):
     material_id, course_id, out_dir, suffix = identity
     record = SimpleNamespace(id=material_id, course_id=course_id, out_dir=out_dir)
     name = "source.pdf" if suffix == ".pdf" else "parsed/live-preview.pdf"
+    # A PDF whose Hangul text map was broken is shown from its repaired copy (same drawing).
+    if suffix == ".pdf" and has_material_artifact(record, "parsed/live-text.pdf"):
+        name = "parsed/live-text.pdf"
     try:
         return read_material_artifact(record, name, PDF_UPLOAD_LIMIT if suffix == ".pdf" else PPTX_UPLOAD_LIMIT)
     except HTTPException as exc:

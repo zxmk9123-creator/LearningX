@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from difflib import SequenceMatcher
-from text_normalization import BAD_SCRIPTS, dangerous_characters, clean_compare, char_bag, token_bag, counter_f1, numeric_bag
+from text_normalization import BAD_SCRIPTS, dangerous_characters, clean_compare, char_bag, token_bag, counter_f1, numeric_bag, repair_text
 
 
 def flatten(page):
@@ -135,7 +135,7 @@ def arbitrate(path,pages,mode='adaptive'):
         second=None
         attempted=bool(reader is not None and should_compare(i,len(pages),page,mode))
         if attempted:
-            try:second=(reader.pages[i].extract_text() or '').strip();compared+=1
+            try:second=repair_text((reader.pages[i].extract_text() or '').strip())[0];compared+=1
             except Exception as exc:
                 reader_error=type(exc).__name__
         record=select(first, second, reader is not None)

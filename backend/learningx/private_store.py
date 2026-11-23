@@ -192,7 +192,7 @@ class PrivateArtifactStore:
             root = Path(folder)
             for item in manifest["files"]:
                 rel = _safe_name(item["path"])
-                if rel == "parsed/live-preview.pdf" or rel.startswith("parsed/live-pages/"):
+                if rel in ("parsed/live-preview.pdf", "parsed/live-text.pdf") or rel.startswith("parsed/live-pages/"):
                     continue
                 raw = self._get(item["key"], item["size"])
                 if len(raw) != item["size"] or _sha(raw) != item["sha256"]:

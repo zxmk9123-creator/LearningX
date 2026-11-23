@@ -27,6 +27,7 @@ MIN_SHARE = 0.95         # a base counts only if this share of its syllables is 
 MIN_FREQUENT = 0.3       # best base: at least this share of frequent syllables
 MIN_MARGIN = 0.2         # ...and this far ahead of the runner-up
 _GLYPH_NAME = re.compile(r'/g([0-9A-Fa-f]{2,6})$')
+_UNI_NAME = re.compile(r'/(?:uni|u)([0-9A-Fa-f]{4,6})$')
 
 
 # About 200 of the most frequent syllables in Korean prose. A wrong base shifts every
@@ -45,8 +46,8 @@ def _common(ch):
         return False
 
 
-def _differences(doc, font_obj):
-    """code -> glyph id from a Type3 font's /Encoding /Differences (glyph names /gHEX)."""
+def _differences(doc, font_obj, pattern=_GLYPH_NAME):
+    """code -> number from a Type3 font's /Encoding /Differences (glyph names /gHEX or /uniHEX)."""
     m = re.search(r'/Encoding\s+(\d+)\s+0\s+R', font_obj)
     enc = doc.xref_object(int(m.group(1))) if m else font_obj
     diff = re.search(r'/Differences\s*\[(.*?)\]', enc, re.S)
@@ -55,7 +56,7 @@ def _differences(doc, font_obj):
         if tok.startswith('/'):
             if code is None:
                 return {}
-            g = _GLYPH_NAME.match(tok)
+            g = pattern.match(tok)
             if g:
                 codes[code] = int(g.group(1), 16)
             code += 1
@@ -74,6 +75,25 @@ def _unicode_targets(doc, font_obj):
     except Exception:
         return []
     return [int(u, 16) for u in re.findall(r'<[0-9A-Fa-f]+>\s*<([0-9A-Fa-f]{4,8})>', cmap)]
+
+
+def _named_fonts(doc):
+    """Type3 fonts whose glyph names already say the character (/uniD55C) but carry no usable map."""
+    fonts = {}
+    for xref in range(1, doc.xref_length()):
+        try:
+            obj = doc.xref_object(xref)
+        except Exception:
+            continue
+        if '/Subtype /Type3' not in obj:
+            continue
+        targets = _unicode_targets(doc, obj)
+        if targets and not all(u <= 0xFF for u in targets):
+            continue
+        codes = _differences(doc, obj, _UNI_NAME)
+        if codes and all(0x20 <= cp < 0x110000 and not 0xD800 <= cp <= 0xDFFF for cp in codes.values()):
+            fonts[xref] = codes
+    return fonts
 
 
 def _suspect_fonts(doc):
@@ -125,31 +145,164 @@ def _cmap(mapping):
             'endcmap\nCMapName currentdict /CMap defineresource pop\nend end\n').encode('ascii')
 
 
+# ---------- CID (Type0, Identity-H) fonts: rebuild the text map from the embedded font ----------
+
+def _parse_cmap(data):
+    """ToUnicode stream -> {code: text} (bfchar and both bfrange forms)."""
+    out = {}
+    text = data.decode('latin-1')
+    hexs = lambda h: ''.join(chr(int(h[i:i + 4], 16)) for i in range(0, len(h), 4)) if len(h) >= 4 else chr(int(h, 16))
+    for block in re.findall(r'beginbfchar(.*?)endbfchar', text, re.S):
+        for code, dst in re.findall(r'<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]*)>', block):
+            out[int(code, 16)] = hexs(dst) if dst else ''
+    for block in re.findall(r'beginbfrange(.*?)endbfrange', text, re.S):
+        for lo, hi, rest in re.findall(r'<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(\[[^\]]*\]|<[0-9A-Fa-f]+>)', block):
+            lo, hi = int(lo, 16), int(hi, 16)
+            if rest.startswith('['):
+                for i, dst in enumerate(re.findall(r'<([0-9A-Fa-f]+)>', rest)):
+                    out[lo + i] = hexs(dst)
+            else:
+                start = int(rest[1:-1], 16)
+                for i in range(min(hi - lo + 1, 65536)):
+                    out[lo + i] = chr(start + i) if start + i < 0x110000 else ''
+    return out
+
+
+def _type0_fonts(doc):
+    """(font xref, ToUnicode map, embedded font bytes, cid->gid or None) for Identity-H/V fonts."""
+    found = []
+    for xref in range(1, doc.xref_length()):
+        try:
+            obj = doc.xref_object(xref)
+        except Exception:
+            continue
+        if '/Subtype /Type0' not in obj or not re.search(r'/Encoding\s*/Identity-[HV]', obj):
+            continue
+        m = re.search(r'/DescendantFonts\s*\[\s*(\d+)\s+0\s+R', obj)
+        if not m:
+            continue
+        desc = doc.xref_object(int(m.group(1)))
+        fd = re.search(r'/FontDescriptor\s+(\d+)\s+0\s+R', desc)
+        if not fd:
+            continue
+        ff = re.search(r'/FontFile[23]?\s+(\d+)\s+0\s+R', doc.xref_object(int(fd.group(1))))
+        if not ff:
+            continue
+        cid2gid = None
+        stream = re.search(r'/CIDToGIDMap\s+(\d+)\s+0\s+R', desc)
+        if stream:
+            raw = doc.xref_stream(int(stream.group(1)))
+            cid2gid = {i // 2: (raw[i] << 8) | raw[i + 1] for i in range(0, len(raw) - 1, 2)}
+        tu = re.search(r'/ToUnicode\s+(\d+)\s+0\s+R', obj)
+        tomap = _parse_cmap(doc.xref_stream(int(tu.group(1)))) if tu else {}
+        found.append((xref, tomap, doc.xref_stream(int(ff.group(1))), cid2gid))
+    return found
+
+
+def _font_reverse(data):
+    """gid -> code point from the embedded font's own cmap, or {} when it cannot be read."""
+    import pymupdf
+    try:
+        font = pymupdf.Font(fontbuffer=data)
+        reverse = {}
+        for cp in font.valid_codepoints():
+            gid = font.has_glyph(cp)
+            if gid and (gid not in reverse or (0xE000 <= reverse[gid] <= 0xF8FF and not 0xE000 <= cp <= 0xF8FF)):
+                reverse[gid] = cp
+        return reverse
+    except Exception:
+        return {}
+
+
+def _cid_plan(entry):
+    """New {cid: text} for a CID font whose ToUnicode disagrees with its own glyph table, else None."""
+    _, tomap, data, cid2gid = entry
+    reverse = _font_reverse(data)
+    if len(reverse) < MIN_GLYPHS:
+        return None
+    if sum(0xE000 <= cp <= 0xF8FF for cp in reverse.values()) > 0.2 * len(reverse):
+        return None  # the font's own table is not trustworthy either
+    gid_of = (lambda cid: cid2gid.get(cid)) if cid2gid is not None else (lambda cid: cid)
+    cids = list(cid2gid) if cid2gid is not None else list(reverse)
+    known = [(cid, chr(reverse[gid_of(cid)])) for cid in cids if gid_of(cid) in reverse]
+    if not known:
+        return None
+    agree = sum(tomap.get(cid) == ch for cid, ch in known) / len(known)
+    if agree >= 0.5:
+        return None
+    plan = dict(tomap)            # keep entries the font cannot speak for (ligatures, spaces)
+    plan.update(known)
+    return plan, round(agree, 3)
+
+
+def _cmap_cid(mapping):
+    def hex16(text):
+        return ''.join(f'{ord(c):04X}' if ord(c) < 0x10000 else
+                       f'{0xD800 + ((ord(c) - 0x10000) >> 10):04X}{0xDC00 + ((ord(c) - 0x10000) & 0x3FF):04X}'
+                       for c in text)
+    items = [(c, t) for c, t in sorted(mapping.items()) if t]
+    chunks = []
+    for i in range(0, len(items), 100):   # PDF limits a bfchar block to 100 entries
+        part = items[i:i + 100]
+        chunks.append(f'{len(part)} beginbfchar\n' + ''.join(f'<{c:04X}> <{hex16(t)}>\n' for c, t in part) + 'endbfchar\n')
+    return ('/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapType 2 def\n'
+            '/CMapName /QURepairCID def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n'
+            + ''.join(chunks) + 'endcmap\nCMapName currentdict /CMap defineresource pop\nend end\n').encode('ascii')
+
+
+def _set_tounicode(doc, font_xref, data):
+    stream = doc.get_new_xref()
+    doc.update_object(stream, '<<>>')
+    doc.update_stream(stream, data)
+    doc.xref_set_key(font_xref, 'ToUnicode', f'{stream} 0 R')
+
+
 def repair_pdf(source, target):
-    """Write a repaired copy to ``target`` when needed. Returns a report dict."""
+    """Write a repaired copy to ``target`` when needed. Returns a report dict.
+
+    Two independent repairs, both only on the text map (the drawing never changes):
+    - type3: Quartz-style Type3 Hangul named by glyph id (base calibrated as above)
+    - cid: Identity-H fonts whose ToUnicode is missing or disagrees with the embedded
+      font's own character table (shifted, PUA, U+FFFD or Latin targets)
+    """
     import pymupdf as fitz
-    report = {'version': VERSION, 'status': 'not_needed', 'fonts': 0, 'glyphs': 0}
+    report = {'version': VERSION, 'status': 'not_needed', 'fonts': 0, 'glyphs': 0, 'cid_fonts': 0}
+    changed = False
     with fitz.open(source) as doc:
         fonts = _suspect_fonts(doc)
-        if not fonts:
-            return report
-        gids = [g for codes in fonts.values() for g in codes.values()]
-        report.update(fonts=len(fonts), glyphs=len(set(gids)))
-        fit = calibrate(gids)
-        if not fit:
-            report.update(status='unrepairable', reason='glyphs_outside_one_hangul_run_or_too_few')
-            return report
-        base, share, runner = fit
-        report.update(base_glyph=base, frequent_share=share, runner_up_share=runner)
-        if share < MIN_FREQUENT or share - runner < MIN_MARGIN:
-            report.update(status='unrepairable', reason='no_clear_hangul_base')
-            return report
-        for xref, codes in fonts.items():
-            mapping = {c: HANGUL_FIRST + g - base for c, g in codes.items() if 0 <= c <= 0xFF}
-            stream = doc.get_new_xref()
-            doc.update_object(stream, '<<>>')
-            doc.update_stream(stream, _cmap(mapping))
-            doc.xref_set_key(xref, 'ToUnicode', f'{stream} 0 R')
-        doc.save(target, garbage=0, deflate=True)
-        report['status'] = 'repaired'
+        if fonts:
+            gids = [g for codes in fonts.values() for g in codes.values()]
+            report.update(fonts=len(fonts), glyphs=len(set(gids)))
+            fit = calibrate(gids)
+            if not fit:
+                report.update(status='unrepairable', reason='glyphs_outside_one_hangul_run_or_too_few')
+            else:
+                base, share, runner = fit
+                report.update(base_glyph=base, frequent_share=share, runner_up_share=runner)
+                if share < MIN_FREQUENT or share - runner < MIN_MARGIN:
+                    report.update(status='unrepairable', reason='no_clear_hangul_base')
+                else:
+                    for xref, codes in fonts.items():
+                        mapping = {c: HANGUL_FIRST + g - base for c, g in codes.items() if 0 <= c <= 0xFF}
+                        _set_tounicode(doc, xref, _cmap(mapping))
+                    changed = True
+        named = _named_fonts(doc)
+        for xref, codes in named.items():
+            _set_tounicode(doc, xref, _cmap({c: cp for c, cp in codes.items() if 0 <= c <= 0xFF}))
+        if named:
+            report['named_fonts'] = len(named)
+            changed = True
+        agreements = []
+        for entry in _type0_fonts(doc):
+            planned = _cid_plan(entry)
+            if planned:
+                plan, agree = planned
+                _set_tounicode(doc, entry[0], _cmap_cid(plan))
+                agreements.append(agree)
+        if agreements:
+            report.update(cid_fonts=len(agreements), cid_prior_agreement=min(agreements))
+            changed = True
+        if changed:
+            doc.save(target, garbage=0, deflate=True)
+            report['status'] = 'repaired'
         return report

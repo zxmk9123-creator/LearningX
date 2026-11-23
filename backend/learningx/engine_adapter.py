@@ -74,7 +74,31 @@ def ingest(source:Path, out:Path):
     doc=json.loads((out/"document.json").read_text(encoding="utf-8"))
     if not isinstance(doc.get("pages"),list) or not doc.get("source",{}).get("sha256"):
         raise HTTPException(422,"Invalid canonical document")
+    if source.suffix.lower()==".pdf" and doc.get("glyph_repair",{}).get("status")=="repaired":
+        live_text_copy(source,out)
     return doc
+
+LIVE_TEXT="live-text.pdf"
+
+def live_text_copy(source:Path, out:Path):
+    """Keep a text-repaired copy for the live view, so students select and quote real Hangul.
+
+    Same drawing as the original; only the fonts' text maps differ. Dropped when it would
+    push the material past the private storage budget (the view then uses the original).
+    """
+    _modules()
+    from glyph_repair import repair_pdf
+    from .private_store import MAX_TOTAL_BYTES
+    target=out/LIVE_TEXT
+    try:
+        if repair_pdf(source,target).get("status")!="repaired":
+            target.unlink(missing_ok=True); return None
+    except Exception:
+        target.unlink(missing_ok=True); return None
+    used=sum(p.stat().st_size for p in out.parent.rglob("*") if p.is_file())
+    if used>MAX_TOTAL_BYTES*0.8:
+        target.unlink(missing_ok=True); return None
+    return target
 
 def candidates(out:Path):
     _,_,block_digest,load_blocks,_,_=_modules()

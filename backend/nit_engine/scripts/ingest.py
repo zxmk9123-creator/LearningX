@@ -20,14 +20,29 @@ def compact(s):
     return re.sub(r'\s+', ' ', str(s or '')).strip()
 
 
+def _invisible_text_share(page):
+    """Share of characters drawn invisibly (render mode 3): a scanner's OCR layer."""
+    try:trace=page.get_texttrace()
+    except Exception:return 0.0
+    total=sum(len(s['chars']) for s in trace)
+    return sum(len(s['chars']) for s in trace if s.get('type')==3)/total if total else 0.0
+
+
 def text_blocks_pdf(page):
+    from text_normalization import repair_text
+    # An invisible text layer over a scan is someone else's OCR, unverified: it is kept for
+    # search and review but never treated as native text (not coaching evidence by itself).
+    ocr_layer=_invisible_text_share(page)>=0.8
     blocks=[]
     for n,b in enumerate(page.get_text('blocks', sort=True)):
         if len(b)>6 and b[6]!=0:continue
-        t=compact(b[4])
+        t,tags=repair_text(compact(b[4]))
         if not t:continue
-        blocks.append({'id':f'b{n:04d}', 'type':'text','text':t,
-                       'bbox':[round(float(x),1) for x in b[:4]],'origin':'native', 'source_type':'pdf_text', 'source_page':page.number+1})
+        block={'id':f'b{n:04d}', 'type':'text','text':t,
+               'bbox':[round(float(x),1) for x in b[:4]],'origin':'native', 'source_type':'pdf_text', 'source_page':page.number+1}
+        if tags:block['text_recovery']=tags
+        if ocr_layer:block.update(origin='ocr',source_type='pdf_ocr_layer')
+        blocks.append(block)
     return blocks
 
 
