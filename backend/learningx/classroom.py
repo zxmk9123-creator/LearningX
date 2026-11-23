@@ -194,6 +194,8 @@ class ChatAccess(BaseModel):
 class PageAccess(BaseModel):
     pages: list[Annotated[int, Field(ge=1, le=100000)]] = Field(default_factory=list, max_length=MAX_BROWSE_PAGES)
     all: bool = False
+    # Every visible page from the first up to the page being shared live right now.
+    upto_current: bool = False
 
 
 class JoinRequest(BaseModel):
@@ -583,7 +585,13 @@ def set_browse_pages(session_id: str, data: PageAccess, db: Session = Depends(se
     db.refresh(s, with_for_update=True)
     if s.status == "CLOSED":
         raise HTTPException(409, "Session already closed")
-    pages = visible if data.all else sorted(set(data.pages))
+    if data.upto_current:
+        slide = db.get(LiveSlide, s.id)
+        if slide is None:
+            raise HTTPException(409, "No page is being shared yet")
+        pages = [page for page in visible if page <= slide.page]
+    else:
+        pages = visible if data.all else sorted(set(data.pages))
     outside = sorted(set(pages) - set(visible))
     if outside:
         raise HTTPException(422, {"code": "PAGES_NOT_AVAILABLE", "pages": outside[:20]})

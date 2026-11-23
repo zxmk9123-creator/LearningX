@@ -915,6 +915,12 @@
       $('browse-hint').hidden = false;
     } catch (err) {
       busy(btn, false);
+      if (err.status === 409 && body.upto_current) {
+        $('browse-hint').className = 'sub error';
+        $('browse-hint').textContent = '아직 송출 중인 쪽이 없어요. 교안을 송출한 뒤 다시 눌러 주세요.';
+        $('browse-hint').hidden = false;
+        return;
+      }
       const outside = err.status === 422 && err.detail?.pages;
       $('browse-hint').className = 'sub error';
       $('browse-hint').textContent = outside ? `${outside.join(', ')}쪽은 없거나 숨긴 쪽이라 열 수 없어요.` : (err.message || '적용하지 못했어요.');
@@ -932,6 +938,7 @@
     }
     saveBrowse({ pages: parsed.pages }, $('browse-save'));
   });
+  $('browse-current').addEventListener('click', () => saveBrowse({ upto_current: true }, $('browse-current')));
   $('browse-all').addEventListener('click', () => saveBrowse({ all: true }, $('browse-all')));
   $('browse-clear').addEventListener('click', () => saveBrowse({ pages: [] }, $('browse-clear')));
 

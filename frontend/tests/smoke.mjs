@@ -767,6 +767,8 @@ console.log('OK: API origin confinement protects invite codes and tokens');
 {
  // Faculty open chosen pages for students to browse apart from the live page.
  assert.ok(teacher.includes('id="browse-form"') && teacher.includes('id="browse-pages"') && teacher.includes('id="browse-all"'), 'teacher page-access controls');
+ assert.ok(teacher.indexOf('id="browse-save"') < teacher.indexOf('id="browse-current"') && teacher.indexOf('id="browse-current"') < teacher.indexOf('id="browse-all"'), '현재 쪽까지 허용 sits between 적용 and 전체 허용');
+ assert.ok(quTeacher.includes("saveBrowse({ upto_current: true }, $('browse-current'))"), 'the server resolves the live page');
  assert.ok(quTeacher.includes("api(`/v1/sessions/${s.id}/browse`, { method: 'PUT', body })"), 'teacher saves the page list');
  assert.ok(student.includes('id="student-browse"') && student.includes('id="browse-view" data-copy-protected'), 'student viewer is copy-protected');
  assert.ok(quStudent.includes('#student-browse [data-copy-protected]'), 'copying from the viewer is blocked');

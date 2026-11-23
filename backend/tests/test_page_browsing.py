@@ -102,6 +102,18 @@ class PageBrowsingTests(unittest.TestCase):
         self.assertEqual(bad.status_code, 422)
         self.assertEqual(bad.json()["detail"], {"code": "PAGES_NOT_AVAILABLE", "pages": [4, 7]})
 
+    def test_up_to_current_opens_the_first_page_through_the_live_page(self):
+        self.assertEqual(self.req("PUT", f"/v1/sessions/{self.sid}/live", self.faculty, json={"page": 5}).status_code, 200)
+        response = self.allow(upto_current=True)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["browse_pages"], [1, 2, 3, 5], "the hidden page 4 stays closed")
+        self.assertEqual(self.page(5).status_code, 200)
+        self.assertEqual(self.page(6).status_code, 403)
+        # The range follows the live page at the moment the teacher presses it, not afterwards.
+        self.req("PUT", f"/v1/sessions/{self.sid}/live", self.faculty, json={"page": 6})
+        self.assertEqual(self.page(6).status_code, 403)
+        self.assertEqual(self.allow(upto_current=True).json()["browse_pages"], [1, 2, 3, 5, 6])
+
     def test_faculty_can_revoke(self):
         self.allow(pages=[1, 2])
         self.assertEqual(self.allow(pages=[]).json()["browse_pages"], [])
