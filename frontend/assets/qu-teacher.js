@@ -19,7 +19,7 @@
   const api = client(() => token, () => { token = null; go('login'); });
   // Sign-in exchange: no token and no 401 redirect (a failed exchange must not re-enter the login screen).
   const authApi = client(() => null);
-  // Unit learning objective step, shown before evidence approval.
+  // Unit learning objective step, shown after evidence approval and right before the class opens.
   const objectiveRules = window.QU.objectiveRules;
   const objectiveForm = window.QU.createObjectiveForm({ api, root: $('objective-form'), status: $('objective-status'),
     onState: paintObjectiveBar });
@@ -217,7 +217,7 @@
     const signed = c.materials.find((m) => m.status === 'FACULTY_SIGNED');
     const pending = c.materials.find((m) => m.status === 'PENDING_FACULTY_REVIEW');
     if (signed) return { label: '수업 시작', cls: 'btn primary', href: `#objective/${c.id}/${signed.id}`, meta: '승인 완료', chip: 'ok' };
-    if (pending) return { label: '검토하기', cls: 'btn', href: `#objective/${c.id}/${pending.id}`, meta: '검토 대기', chip: 'warn' };
+    if (pending) return { label: '검토하기', cls: 'btn', href: `#prepare/${c.id}/${pending.id}`, meta: '검토 대기', chip: 'warn' };
     return { label: '교안 올리기', cls: 'btn', href: `#upload/${c.id}`, meta: '교안 없음', chip: '' };
   }
 
@@ -360,7 +360,7 @@
         u.timer = null;
         if (u.file && /\.pdf$/i.test(u.file.name)) uploadedPdf = {material: job.material_id, file: u.file};
         await loadCourses().catch(() => {});
-        return go(`objective/${u.courseId}/${job.material_id}`);
+        return go(`prepare/${u.courseId}/${job.material_id}`);
       }
       if (job.status === 'FAILED') {
         setError($('upload-error'), '교안을 분석하지 못했습니다. 다시 시도하거나 다른 파일을 올려 주세요.');
@@ -430,9 +430,15 @@
     if (!state.courses.length) await loadCourses();
     const course = state.courses.find((c) => c.id === courseId);
     if (!course) return go('courses');
-    header({ crumb: course.title, step: 2, back: true });
+    let material = (course.materials || []).find((m) => m.id === materialId);
+    if (!material) material = ((await loadCourses()).find((c) => c.id === courseId)?.materials || []).find((m) => m.id === materialId);
+    // The preview and the class both coach from approved evidence, so approval (step 2) comes first.
+    if (!material || material.status !== 'FACULTY_SIGNED' || !coachingAllowed(course)) return go(`prepare/${courseId}/${materialId}`);
+    header({ crumb: course.title, step: 3, back: true });
     screen('objective');
-    state.objective = { courseId, materialId };
+    state.objective = { course, material };
+    setError($('objective-error'), null);
+    $('approval-edit').setAttribute('href', `#prepare/${courseId}/${materialId}`);
     resetSkip();
     await objectiveForm.load(materialId);
   }
@@ -445,10 +451,10 @@
       : dirty ? '확정하면 이후 여는 수업부터 이 설정을 써요'
         : saved ? objectiveRules.summary(saved).replace(/^v\d+ · /, '')
           : '학습목표와 수행 증거를 적으면 확정할 수 있어요';
-    next.textContent = dirty || !saved ? '확정하고 다음' : '다음';
+    next.textContent = dirty || !saved ? '확정하고 수업 시작' : '수업 시작';
     next.disabled = working || (dirty ? missing.length > 0 : !saved);
     show(skip, !saved || dirty);
-    if (!skip.dataset.confirm) skip.textContent = saved ? '변경 취소하고 다음' : '다음에 설정';
+    if (!skip.dataset.confirm) skip.textContent = saved ? '변경 취소하고 수업 시작' : '설정 없이 수업 시작';
   }
 
   function resetSkip() {
@@ -457,9 +463,19 @@
     skip.classList.remove('dark');
   }
 
-  function toApproval() {
-    const { courseId, materialId } = state.objective;
-    go(`prepare/${courseId}/${materialId}`);
+  async function startClass(btn) {
+    const { course, material } = state.objective;
+    setError($('objective-error'), null);
+    busy(btn, true, '시작하는 중…');
+    try {
+      const session = await api(`/v1/courses/${course.id}/sessions`, { method: 'POST', body: { material_id: material.id } });
+      openedSession = session;
+      go(`live/${session.id}`);
+    } catch (err) {
+      setError($('objective-error'), err.status === 409 && err.detail === 'LIVE_PREVIEW_UNAVAILABLE'
+        ? '이 교안의 송출 화면이 준비되지 않았습니다. 새로 올리거나 PDF로 저장해 올려 주세요.' : err);
+      busy(btn, false);
+    }
   }
 
   $('objective-next').addEventListener('click', async () => {
@@ -471,7 +487,7 @@
       try { await objectiveForm.save(); } catch (_) { busy(btn, false); return; }
       busy(btn, false);
     }
-    toApproval();
+    await startClass(btn);
   });
 
   $('objective-skip').addEventListener('click', () => {
@@ -487,21 +503,10 @@
     }
     resetSkip();
     objectiveForm.discard();
-    toApproval();
+    startClass(btn);
   });
 
-  async function paintObjectiveSummary(courseId, materialId) {
-    $('objective-edit').setAttribute('href', `#objective/${courseId}/${materialId}`);
-    $('objective-summary-text').textContent = '불러오는 중…';
-    try {
-      const res = await api(`/v1/materials/${materialId}/objective-profiles`);
-      $('objective-summary-text').textContent = objectiveRules.summary(res.latest);
-    } catch (_) {
-      $('objective-summary-text').textContent = '불러오지 못했어요. 미설정이면 기존 코칭 흐름을 사용합니다.';
-    }
-  }
-
-  /* ---------- 4 · 교안 승인 ---------- */
+  /* ---------- 2 · 교안 승인 ---------- */
   function clearConsentError() {
     setError($('ai-consent-error'), null);
     $('prepare-consent').classList.remove('consent-required');
@@ -514,7 +519,7 @@
   function showConsentError() {
     const card = $('prepare-consent');
     const checkbox = $('ai-consent');
-    setError($('ai-consent-error'), 'AI 질문 코칭 사용에 동의해야 수업을 시작할 수 있습니다.');
+    setError($('ai-consent-error'), 'AI 질문 코칭 사용에 동의해야 다음 단계로 갈 수 있습니다.');
     checkbox.setAttribute('aria-invalid', 'true');
     checkbox.setAttribute('aria-describedby', 'ai-consent-error');
     card.classList.remove('consent-required');
@@ -529,7 +534,7 @@
     const course = state.courses.find((c) => c.id === courseId);
     if (!course) return go('courses');
     const material = (course.materials || []).find((m) => m.id === materialId) || { id: materialId, filename: '' };
-    header({ crumb: course.title, step: 3, back: true });
+    header({ crumb: course.title, step: 2, back: true });
     screen('prepare');
     clearConsentError();
     setError($('prepare-error'), null);
@@ -539,7 +544,6 @@
     const res = await api(`/v1/materials/${materialId}/candidates`, { timeout: 120000 });
     const isPptx = /\.pptx$/i.test(material.filename || '');
     state.prepare = { course, material, candidates: res.eligible_candidates, approved: res.approved_count, isPptx };
-    paintObjectiveSummary(courseId, materialId);
     $('cand-count').textContent = String(res.eligible_candidates.length);
     $('cand-approved').textContent = String(res.approved_count);
     show($('media-notice'), isPptx); show($('media-ack-row'), isPptx);
@@ -577,7 +581,7 @@
     const all = $('candidate-list').querySelectorAll('input[type=checkbox]');
     $('select-all').textContent = items.length === Math.min(all.length, MAX_APPROVAL_ITEMS) && items.length ? '선택 해제' : all.length > MAX_APPROVAL_ITEMS ? '최대 1,000개 선택' : '모두 선택';
     $('select-all').disabled = !all.length;
-    $('approve-start').textContent = items.length ? '승인하고 수업 시작' : '수업 시작';
+    $('approve-start').textContent = items.length ? '승인하고 다음' : '다음';
     $('approve-start').disabled = items.length > MAX_APPROVAL_ITEMS || (!items.length && !p.approved);
     if (items.length > MAX_APPROVAL_ITEMS) $('bar-count').textContent = '한 번에 최대 1,000개까지 승인할 수 있습니다.';
   }
@@ -598,7 +602,7 @@
     if (items.length > MAX_APPROVAL_ITEMS) return setError($('prepare-error'), '한 번에 최대 1,000개까지 승인할 수 있습니다.');
     if (!$('ai-consent').checked) return showConsentError();
     if (items.length && p.isPptx && !$('media-ack').checked) return setError($('prepare-error'), '분석되지 않은 오디오·도표 안내를 확인해 주세요.');
-    busy(btn, true, '시작하는 중…');
+    busy(btn, true, '승인하는 중…');
     try {
       if (!coachingAllowed(p.course)) {
         const policy = p.course.policy === 'PROHIBITED' ? 'RESTRICTED_HINT_ONLY' : p.course.policy;
@@ -609,13 +613,13 @@
         await api(`/v1/materials/${p.material.id}/approve`, { method: 'POST', timeout: 120000,
           body: { items, acknowledge_unprocessed_media: p.isPptx && $('media-ack').checked } });
       }
-      const session = await api(`/v1/courses/${p.course.id}/sessions`, { method: 'POST', body: { material_id: p.material.id } });
-      openedSession = session;
-      go(`live/${session.id}`);
+      const known = (p.course.materials || []).find((m) => m.id === p.material.id);
+      if (known) known.status = 'FACULTY_SIGNED';
+      else (p.course.materials ||= []).push({ ...p.material, status: 'FACULTY_SIGNED' });
+      busy(btn, false);
+      go(`objective/${p.course.id}/${p.material.id}`);
     } catch (err) {
-      if (err.status === 409 && err.detail === 'LIVE_PREVIEW_UNAVAILABLE') {
-        setError($('prepare-error'), '이 교안의 송출 화면이 준비되지 않았습니다. 새로 올리거나 PDF로 저장해 올려 주세요.');
-      } else if (err.status === 409 && /narration/i.test(err.detail)) {
+      if (err.status === 409 && /narration/i.test(err.detail)) {
         show($('media-ack-row'), true); show($('media-notice'), true); p.isPptx = true;
         setError($('prepare-error'), '이 PPTX에는 분석되지 않은 내레이션이 있습니다. 확인란에 체크한 뒤 다시 시도해 주세요.');
       } else {

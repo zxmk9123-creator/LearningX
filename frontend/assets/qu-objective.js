@@ -1,4 +1,4 @@
-/* Question-up unit learning objective step (between upload and evidence approval).
+/* Question-up unit learning objective step (after evidence approval, right before the class opens).
  * Order follows backward design: objective -> evidence to observe -> coaching.
  * Each thinking process gets a 1-5 emphasis level (default: the middle, 3); their
  * weighted average picks the process coaching aims at (mirrors objectives.py).
@@ -333,7 +333,7 @@
         say('');
       } catch (err) {
         preview = null;
-        say(err.status === 409 ? '교안 내용을 승인하고 AI 코칭에 동의한 뒤 미리볼 수 있어요. 다음 화면에서 승인한 뒤 다시 확인해 보세요.' : err.message);
+        say(err.status === 409 ? '승인한 교안 내용이 없어 미리볼 수 없어요. 위의 교안 승인 수정에서 코칭에 쓸 내용을 승인해 주세요.' : err.message);
       } finally { busy = false; render(); }
     }
 

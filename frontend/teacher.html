@@ -18,8 +18,8 @@
   <div class="right">
     <nav class="stepper" id="stepper" aria-label="수업 준비 단계" hidden>
       <span data-step="1"><i>1</i>교안 올리기</span>
-      <span data-step="2"><i>2</i>학습목표</span>
-      <span data-step="3"><i>3</i>교안 승인</span>
+      <span data-step="2"><i>2</i>교안 승인</span>
+      <span data-step="3"><i>3</i>학습목표</span>
       <span data-step="4"><i>4</i>수업 시작</span>
     </nav>
     <span class="chip ok" id="live-chip" hidden><span class="dot"></span>질문 받는 중</span>
@@ -98,16 +98,7 @@
     </form>
   </section>
 
-  <!-- 3 · 학습목표 -->
-  <section id="screen-objective" class="objective-screen" data-screen hidden>
-    <div><h1 class="page-title">이번 수업의 학습목표를 정해 주세요</h1>
-      <p class="page-sub">챗봇이 학생에게 되물을 방향을 정합니다. 지금 정하지 않으면 기존 코칭 흐름으로 진행해요.</p>
-      <p class="objective-legend"><span class="req-mark" aria-hidden="true">*</span> 표시는 확정하려면 꼭 입력해야 하는 항목이에요.</p></div>
-    <div class="stack" id="objective-form"></div>
-    <p class="small objective-status" id="objective-status" role="status" aria-live="polite"></p>
-  </section>
-
-  <!-- 4 · 교안 승인 -->
+  <!-- 2 · 교안 승인 -->
   <section id="screen-prepare" data-screen hidden>
     <div><h1 class="page-title">학생 코칭에 쓸 내용을 골라 주세요</h1>
       <p class="page-sub">승인한 내용만 AI가 학생에게 근거로 인용합니다. 나머지는 학생에게 보이지 않습니다.</p></div>
@@ -121,10 +112,6 @@
       <label class="check"><input type="checkbox" id="ai-consent">이 수업에서 학생 질문 코칭에 AI를 사용합니다. AI는 정답을 알려 주지 않고, 승인한 근거로 되묻기만 합니다.</label>
       <p class="error prepare-consent-error" id="ai-consent-error" role="alert" hidden></p>
     </div>
-    <div class="card tight objective-summary" id="objective-summary">
-      <span class="k">학습목표</span><span class="grow" id="objective-summary-text">불러오는 중…</span>
-      <a class="btn sm" id="objective-edit" href="#">수정</a>
-    </div>
     <div class="list">
       <div class="head row between"><span>교안 내용</span><button class="btn sm" type="button" id="select-all">모두 선택</button></div>
       <p class="muted small prepare-list-note">코칭에 사용할 내용을 한 번에 최대 1,000개 선택해 주세요. 다시 승인하면 선택한 내용으로 승인 범위가 바뀝니다.</p>
@@ -133,6 +120,20 @@
     <label class="card tight check" id="media-ack-row" hidden><input type="checkbox" id="media-ack">분석되지 않은 오디오·도표가 있다는 것을 확인했습니다.</label>
     <p class="error" id="prepare-error" hidden></p>
   </section>
+  <!-- 3 · 학습목표 -->
+  <section id="screen-objective" class="objective-screen" data-screen hidden>
+    <div><h1 class="page-title">이번 수업의 학습목표를 정해 주세요</h1>
+      <p class="page-sub">챗봇이 학생에게 되물을 방향을 정합니다. 지금 정하지 않으면 기존 코칭 흐름으로 진행해요.</p>
+      <p class="objective-legend"><span class="req-mark" aria-hidden="true">*</span> 표시는 확정하려면 꼭 입력해야 하는 항목이에요.</p></div>
+    <div class="card tight objective-summary" id="approval-summary">
+      <span class="k">교안 승인</span><span class="grow" id="approval-summary-text">승인한 교안 내용만 코칭 근거로 씁니다.</span>
+      <a class="btn sm" id="approval-edit" href="#">수정</a>
+    </div>
+    <div class="stack" id="objective-form"></div>
+    <p class="small objective-status" id="objective-status" role="status" aria-live="polite"></p>
+    <p class="error" id="objective-error" hidden></p>
+  </section>
+
 
   <!-- 5–6 · 수업 중 -->
   <section id="screen-live" data-screen hidden>
@@ -192,12 +193,12 @@
 
 <div class="actionbar" id="objective-bar" hidden>
   <span class="objective-bar-text"><b id="objective-bar-state">미설정</b><span class="sub" id="objective-bar-hint">학습목표와 수행 증거를 적으면 확정할 수 있어요</span></span>
-  <div class="row"><button class="btn" type="button" id="objective-skip">다음에 설정</button><button class="btn lg primary" type="button" id="objective-next" disabled>확정하고 다음</button></div>
+  <div class="row"><button class="btn" type="button" id="objective-skip">설정 없이 수업 시작</button><button class="btn lg primary" type="button" id="objective-next" disabled>확정하고 수업 시작</button></div>
 </div>
 
 <div class="actionbar" id="prepare-bar" hidden>
   <span><b id="bar-count">0쪽</b><span class="sub">을 근거로 승인합니다</span></span>
-  <div class="row"><a class="btn" href="#courses">나중에 하기</a><button class="btn lg" type="button" id="approve-start">승인하고 수업 시작</button></div>
+  <div class="row"><a class="btn" href="#courses">나중에 하기</a><button class="btn lg" type="button" id="approve-start">승인하고 다음</button></div>
 </div>
 
 <div class="projector" id="projector" hidden>

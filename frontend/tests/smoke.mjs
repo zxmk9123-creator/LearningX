@@ -122,16 +122,20 @@ console.log('OK: API origin confinement protects invite codes and tokens');
 }
 
 {
- // Unit learning objective step: its own screen before evidence approval, load order and the pure request rules.
+ // Unit learning objective step: its own screen after evidence approval (the preview coaches from approved evidence).
  const order=[...teacher.matchAll(/<script src="assets\/([^"]+)"/g)].map(m=>m[1]);
  assert.ok(order.indexOf('qu-api.js')<order.indexOf('qu-objective.js')&&order.indexOf('qu-objective.js')<order.indexOf('qu-teacher.js'));
- assert.ok(teacher.indexOf('id="screen-objective"') < teacher.indexOf('id="screen-prepare"'), 'objective screen precedes approval');
+ assert.ok(teacher.indexOf('id="screen-prepare"') < teacher.indexOf('id="screen-objective"'), 'approval screen precedes the objective');
  assert.ok(!teacher.includes('objective-panel'), 'objective is no longer bundled into the approval screen');
- for (const id of ['objective-form','objective-status','objective-bar','objective-next','objective-skip','objective-summary-text','objective-edit'])
+ for (const id of ['objective-form','objective-status','objective-bar','objective-next','objective-skip','objective-error','approval-summary-text','approval-edit'])
   assert.ok(teacher.includes(`id="${id}"`), id);
- assert.deepEqual([...teacher.matchAll(/<span data-step="\d"><i>\d<\/i>([^<]+)<\/span>/g)].map(m=>m[1]), ['교안 올리기','학습목표','교안 승인','수업 시작']);
- assert.ok(quTeacher.includes("case 'objective'") && quTeacher.includes('go(`objective/${u.courseId}/${job.material_id}`)'), 'upload continues to the objective step');
+ assert.deepEqual([...teacher.matchAll(/<span data-step="\d"><i>\d<\/i>([^<]+)<\/span>/g)].map(m=>m[1]), ['교안 올리기','교안 승인','학습목표','수업 시작']);
+ assert.ok(quTeacher.includes("case 'objective'") && quTeacher.includes('go(`prepare/${u.courseId}/${job.material_id}`)'), 'upload continues to approval');
+ assert.ok(quTeacher.includes('go(`objective/${p.course.id}/${p.material.id}`)'), 'approval continues to the objective step');
+ assert.ok(quTeacher.includes("material.status !== 'FACULTY_SIGNED'"), 'the objective step sends unapproved materials back to approval');
+ assert.ok(!teacher.includes('id="objective-summary"'), 'approval no longer summarizes a later step');
  assert.ok(quTeacher.includes('objectiveForm.save()') && quTeacher.includes('objectiveForm.discard()'), 'next confirms, skip discards');
+ assert.ok(quTeacher.includes('await startClass(btn)') && quTeacher.includes('startClass(btn);'), 'both objective buttons open the class');
  assert.ok(!quTeacher.includes('objectivePanel'), 'old panel wiring removed');
  const quObjective = fs.readFileSync(path.join(root,'assets/qu-objective.js'),'utf8');
  assert.ok(quObjective.includes("card('단원 학습목표 *'") && quObjective.includes("card('확인할 수행 증거 *'"), 'required fields are marked with *');
@@ -194,7 +198,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.equal(R.summary(null), '미설정 · 기존 코칭 흐름을 사용합니다');
  assert.equal(R.summary(saved), 'v2 · 분석 중심 · 방향 제시 · 학생은 분포를 보고 평균 변화의 원인을 설명할 수 있다.');
  assert.ok(R.REASON.answer_disclosure && R.REASON.evidence_unclear && R.RELEVANCE.prerequisite);
- console.log('OK: learning objective step precedes approval, sets a 5-level emphasis per process (default middle) whose weighted average picks the focus and builds clean requests');
+ console.log('OK: learning objective step follows approval, sets a 5-level emphasis per process (default middle) whose weighted average picks the focus and builds clean requests');
 }
 
 {
