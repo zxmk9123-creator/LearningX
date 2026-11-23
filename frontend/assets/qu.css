@@ -209,6 +209,8 @@ button,input,textarea,select{font:inherit;color:inherit}
 .stu-center{flex:1;max-width:520px;width:100%;margin:0 auto;padding:40px 20px;display:flex;flex-direction:column;gap:16px}
 .stu-center h1{font-size:26px;font-weight:700;line-height:1.35}
 .sent-card{background:var(--surface-subtle);border-radius:var(--radius-2xl);padding:16px;display:flex;flex-direction:column;gap:8px}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.danger:hover{filter:brightness(.95);color:#fff}
 .browse-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .browse-actions .btn{width:100%}
 .live-head-actions{gap:8px;align-items:center}

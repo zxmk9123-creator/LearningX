@@ -38,7 +38,7 @@ from .objectives import coaching_payload, link_latest_profile, session_profile
 from . import suitability as fit
 from . import judgments
 from .security import actor, decode_token, issue_token, require_course, scheme, session
-from .storage import Audit, Base, Course, Material, Member, Question, Revision, LiveReadSession, PublishSession, SessionLocal, User, publish_engine, uid
+from .storage import Audit, Base, Course, CourseDeletion, Material, Member, Question, Revision, LiveReadSession, PublishSession, SessionLocal, User, publish_engine, uid
 
 router = APIRouter(prefix="/v1", route_class=LiveTimingRoute)
 
@@ -523,6 +523,25 @@ def open_session(course_id: str, data: OpenSession, background_tasks: Background
             "objective_profile": {"id": profile.id, "version": profile.version} if profile else None,
             "initial_live": {"status": s.status, "slide": {**_slide_metadata(first_slide), "visible_pages": pages},
                              "index": []}}
+
+
+@router.delete("/courses/{course_id}")
+def delete_course(course_id: str, db: Session = Depends(session), user: User = Depends(actor)):
+    """Faculty remove a course from 내 수업. Open classes end first; rows are kept."""
+    require_course(db, course_id, user, "faculty")
+    if not db.get(Course, course_id):
+        raise HTTPException(404, "Course not found")
+    ended = []
+    for s in (db.query(ClassSession).filter(ClassSession.course_id == course_id, ClassSession.status != "CLOSED")
+              .with_for_update().all()):
+        s.status, s.closed_at = "CLOSED", now()
+        ended.append(s.id)
+    db.add(CourseDeletion(course_id=course_id, deleted_by=user.id))
+    _audit(db, user.id, course_id, "course_deleted", detail=f"closed_sessions={len(ended)}")
+    db.commit()
+    for session_id in ended:
+        notify(session_id)
+    return {"deleted": True, "closed_sessions": len(ended)}
 
 
 @router.get("/courses/{course_id}/sessions")

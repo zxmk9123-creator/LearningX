@@ -245,9 +245,40 @@
         el('span', { class: `chip ${act.chip}`, text: act.meta }),
         last,
         c.materials.length ? el('a', { class: 'btn ghost sm', href: `#upload/${c.id}`, text: '교안 추가' }) : null,
-        el('a', { class: act.cls, href: act.href, text: act.label }));
+        el('a', { class: act.cls, href: act.href, text: act.label }),
+        el('button', { class: 'btn ghost sm course-delete', type: 'button', 'data-course': c.id,
+          'aria-label': `${c.title} 삭제`, text: '삭제' }));
     }));
   }
+
+  // Two-step delete without a modal dialog: the first press asks, the second deletes.
+  $('course-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button.course-delete');
+    if (!btn) return;
+    const course = state.courses.find((c) => c.id === btn.dataset.course);
+    if (!course) return;
+    if (btn.dataset.confirm !== '1') {
+      btn.dataset.confirm = '1';
+      btn.classList.remove('ghost'); btn.classList.add('danger');
+      btn.textContent = course.openSession ? '진행 중인 수업도 종료돼요. 삭제할까요?' : '정말 삭제할까요?';
+      setTimeout(() => {
+        if (!btn.isConnected || btn.disabled) return;
+        btn.dataset.confirm = ''; btn.textContent = '삭제';
+        btn.classList.remove('danger'); btn.classList.add('ghost');
+      }, 4000);
+      return;
+    }
+    busy(btn, true, '삭제하는 중…');
+    try {
+      await api(`/v1/courses/${course.id}`, { method: 'DELETE' });
+      state.courses = state.courses.filter((c) => c.id !== course.id);
+      await renderCourses();
+    } catch (err) {
+      busy(btn, false);
+      globalError(err.status === 404 ? '이미 삭제된 수업이에요.' : err);
+      if (err.status === 404) await renderCourses();
+    }
+  });
 
   $('new-course').addEventListener('click', () => go('upload'));
 

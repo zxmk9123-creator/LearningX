@@ -783,3 +783,10 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(ctx.parsePages('1-x').error && ctx.parsePages('5-2').error);
  console.log('OK: faculty choose pages students can browse apart from the live page');
 }
+{
+ // 내 수업: each course can be deleted with a two-step confirm.
+ assert.ok(quTeacher.includes("class: 'btn ghost sm course-delete'"), 'each course has a delete button');
+ assert.ok(quTeacher.includes("api(`/v1/courses/${course.id}`, { method: 'DELETE' })"), 'delete calls the API');
+ assert.ok(quTeacher.includes("btn.dataset.confirm !== '1'"), 'the first press only asks');
+ console.log('OK: faculty can delete a course from 내 수업 after confirming');
+}

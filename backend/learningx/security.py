@@ -5,7 +5,7 @@ import jwt
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from .storage import SessionLocal, User, Member
+from .storage import CourseDeletion, SessionLocal, User, Member
 
 scheme = HTTPBearer(auto_error=False)
 def secret():
@@ -47,6 +47,8 @@ def require_course(db:Session, course_id:str, user:User, required:str):
     m=db.query(Member).filter_by(course_id=course_id,user_id=user.id).first()
     if not m or (m.role!=required and user.role!="admin"):
         raise HTTPException(403,"Course access denied")
+    if db.get(CourseDeletion,course_id):
+        raise HTTPException(404,"Course not found")
     return m
 
 

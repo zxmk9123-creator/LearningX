@@ -26,6 +26,15 @@ class Course(Base):
     teacher_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
 
+class CourseDeletion(Base):
+    """A course its faculty deleted from 내 수업. The course disappears from every
+    list and API, but its rows stay for audit and recovery. A separate table keeps
+    courses unchanged (create_all adds tables, not columns)."""
+    __tablename__ = "course_deletions"
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), primary_key=True)
+    deleted_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
 class Member(Base):
     __tablename__ = "members"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)

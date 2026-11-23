@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
-from .storage import init_db, warm_live_pools, User, Course, Member, Material, Audit, Question, Revision
+from .storage import init_db, warm_live_pools, User, Course, CourseDeletion, Member, Material, Audit, Question, Revision
 from .security import actor, session, require_course, secret, issue_token
 from . import engine_adapter as nit
 from . import private_store
@@ -125,7 +125,9 @@ def create_course(data:CourseCreate,db:Session=Depends(session),user:User=Depend
     if user.role not in ("faculty","admin"):raise HTTPException(403,"Faculty only")
     if is_guest(user):
         db.query(User).filter_by(id=user.id).with_for_update().one()
-        if db.query(Course.id).filter_by(created_by=user.id).first():
+        # A guest makes one course at a time; a deleted one no longer counts.
+        live=db.query(Course.id).filter(Course.created_by==user.id,~Course.id.in_(db.query(CourseDeletion.course_id)))
+        if live.first():
             raise HTTPException(409, "Guest sessions can create one course")
     c=Course(title=data.title,policy=data.policy,teacher_approved=data.teacher_approved,created_by=user.id)
     db.add(c);db.flush()
@@ -272,10 +274,12 @@ def my_questions(course_id:str,db:Session=Depends(session),user:User=Depends(act
 @app.get("/v1/courses/mine")
 def my_courses(db:Session=Depends(session),user:User=Depends(actor)):
     memberships=db.query(Member).filter_by(user_id=user.id).all()
+    deleted={row.course_id for row in db.query(CourseDeletion.course_id)
+             .filter(CourseDeletion.course_id.in_([m.course_id for m in memberships]))}
     courses=[]
     for m in memberships:
         c=db.get(Course,m.course_id)
-        if c:
+        if c and c.id not in deleted:
             courses.append({"id":c.id,"title":c.title,"role":m.role,
                 "policy":c.policy,"teacher_approved":c.teacher_approved})
     return {"items":courses}
@@ -285,7 +289,7 @@ def course_materials(course_id:str,db:Session=Depends(session),user:User=Depends
     membership=db.query(Member).filter_by(course_id=course_id,user_id=user.id).first()
     if not membership:
         raise HTTPException(403,"Course access denied")
-    if not db.get(Course,course_id):
+    if not db.get(Course,course_id) or db.get(CourseDeletion,course_id):
         raise HTTPException(404,"Course not found")
     materials=db.query(Material).filter_by(course_id=course_id).order_by(Material.created_at.desc()).all()
     # No raw document content, files, or teacher review evidence is returned.
