@@ -16,7 +16,31 @@
     tick: null,
   };
 
-  const api = client(() => token, () => { token = null; go('login'); });
+  // A 401 usually means the sign-in expired mid-class. Recover without leaving the
+  // current screen when possible (a Google sign-in renews silently); otherwise sign in again.
+  let authKind = null;
+  let recovering = null;
+  function signedIn(value, kind) {
+    token = value;
+    if (kind) authKind = kind;
+    fresh.schedule();
+  }
+  function lostAuth() {
+    recovering ??= (async () => {
+      if (authKind === 'google') {
+        try {
+          await google.session();
+          const result = await google.exchange('faculty');
+          if (result?.role === 'faculty' && result.access_token) { signedIn(result.access_token); return; }
+        } catch (_) { /* fall through to sign-in */ }
+      }
+      token = null;
+      fresh.stop();
+      go('login');
+    })().finally(() => { recovering = null; });
+  }
+  const api = client(() => token, lostAuth);
+  const fresh = window.QU.keepTokenFresh({ getToken: () => token, setToken: (value) => { token = value; }, onLost: lostAuth });
   // Sign-in exchange: no token and no 401 redirect (a failed exchange must not re-enter the login screen).
   const authApi = client(() => null);
   // Unit learning objective step, shown after evidence approval and right before the class opens.
@@ -115,7 +139,7 @@
     busy(button, true, '준비 중…');
     try {
       const result = await api('/v1/faculty/guest', { method: 'POST', body: {} });
-      token = result.access_token;
+      signedIn(result.access_token, 'guest');
       go('upload');
     } catch (err) {
       setError($('login-error'), err.status === 429 ? '오늘 열 수 있는 체험 수업이 모두 사용됐습니다.' : err);
@@ -138,7 +162,7 @@
     }
     show($('google-role'), false);
     if (result.role === 'student') { google.goTo('student.html', 'student'); return false; }
-    token = result.access_token;
+    signedIn(result.access_token, 'google');
     google.clearReturnParams();
     return true;
   }
@@ -722,7 +746,12 @@
         liveMark?.('publish-start', version, next);
         try {
           const url = `/v1/sessions/${live.session.id}/live`;
-          const result = await api(url, options).catch(err => {
+          const result = await api(url, options).catch(async err => {
+            // An expired sign-in renews in place; send the same page once more with the new token.
+            if (err.status === 401 && recovering) {
+              await recovering;
+              if (token && state.live === live && liveView === view && live.requestedPage === undefined) return api(url, options);
+            }
             if ((err.status === 0 || err.status >= 500) && state.live === live && liveView === view &&
                 live.requestedPage === undefined) return api(url, options);
             throw err;

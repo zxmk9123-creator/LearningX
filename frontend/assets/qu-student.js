@@ -30,11 +30,15 @@
   };
   const api = client(() => token, () => {
     token = null;
+    fresh.stop();
     stopPoll();
     clearTimeout(draftPoll);
     showScreen('join');
     setError($('join-error'), '입장 시간이 만료됐습니다. 코드를 다시 입력해 주세요.');
   });
+
+  // Class tokens last four hours; an open tab renews before then.
+  const fresh = window.QU.keepTokenFresh({ getToken: () => token, setToken: (value) => { token = value; } });
 
   const STAGE_TEXT = { seed: '아직 씨앗', shallow: '얕은 질문', mid: '중간 질문', deep: '깊은 질문' };
   const GROWTH = {
@@ -474,6 +478,7 @@
       const joinApi = joinTicket ? client(() => joinTicket) : api;
       const res = await joinApi('/v1/join', { method: 'POST', body: { code } });
       token = res.access_token;
+      fresh.schedule();
       st.session = res.session;
       history.replaceState(null, '', location.pathname + (new URLSearchParams(location.search).get('api') ? `?api=${encodeURIComponent(new URLSearchParams(location.search).get('api'))}` : ''));
       startCoach(res.initial_live);

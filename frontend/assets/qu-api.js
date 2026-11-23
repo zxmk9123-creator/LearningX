@@ -89,6 +89,59 @@
     };
   }
 
+  // Expiry (ms) read from a JWT's payload; the server still verifies every token.
+  function tokenExpiry(token) {
+    try {
+      const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const exp = JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4))).exp;
+      return Number.isFinite(exp) ? exp * 1000 : null;
+    } catch (_) { return null; }
+  }
+
+  // Renews the in-memory token while the page is open, so a class that runs past the
+  // token lifetime keeps polling and publishing instead of dropping to sign-in.
+  const RENEW_BEFORE = 15 * 60 * 1000;
+  function keepTokenFresh({ getToken, setToken, onLost }) {
+    const renewApi = client(getToken);  // no 401 redirect: a failed renewal reports through onLost
+    let timer = null;
+    let running = null;
+    function schedule() {
+      clearTimeout(timer);
+      const token = getToken();
+      const exp = token && tokenExpiry(token);
+      if (!exp) return;
+      timer = setTimeout(renew, Math.max(5000, exp - RENEW_BEFORE - Date.now()));
+    }
+    function renew() {
+      if (!getToken()) return Promise.resolve(false);
+      running ??= (async () => {
+        const sent = getToken();
+        try {
+          const res = await renewApi('/v1/auth/refresh', { method: 'POST', timeout: 15000 });
+          if (getToken() === sent) setToken(res.access_token);
+          schedule();
+          return true;
+        } catch (err) {
+          if (getToken() !== sent) return false;  // signed out or replaced meanwhile
+          if (err.status === 401) { onLost?.(); return false; }
+          clearTimeout(timer);
+          timer = setTimeout(renew, 30000);  // network or server hiccup: try again soon
+          return false;
+        } finally { running = null; }
+      })();
+      return running;
+    }
+    // Timers stall while a laptop sleeps; check again when the page comes back.
+    const wake = () => {
+      const exp = getToken() && tokenExpiry(getToken());
+      if (exp && document.visibilityState !== 'hidden' && exp - Date.now() < RENEW_BEFORE) renew();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    return { schedule, renew, stop: () => clearTimeout(timer) };
+  }
+
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
@@ -126,5 +179,5 @@
     });
   }
 
-  window.QU = { apiBase, client, ApiError, el, LEVEL, levelText, relTime, liveMark, liveTimingEnabled: traceEnabled };
+  window.QU = { apiBase, client, ApiError, keepTokenFresh, tokenExpiry, el, LEVEL, levelText, relTime, liveMark, liveTimingEnabled: traceEnabled };
 })();

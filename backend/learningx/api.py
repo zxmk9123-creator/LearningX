@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
 from .storage import init_db, warm_live_pools, User, Course, CourseDeletion, Member, Material, Audit, Question, Revision
-from .security import actor, session, require_course, secret, issue_token
+from .security import actor, decode_token, renew_token, scheme, session, require_course, secret, issue_token
 from . import engine_adapter as nit
 from . import private_store
 from .ingest_queue import router as ingest_router
@@ -119,6 +119,12 @@ def faculty_beta_session(data: FacultyBetaInvite, response: Response, db: Sessio
     private_store.require_store()
     response.headers["Cache-Control"] = "no-store"
     return {"access_token": issue_token(user.id, minutes=60)}
+
+@app.post("/v1/auth/refresh")
+def refresh_token(response:Response, credentials=Depends(scheme), user:User=Depends(actor)):
+    """Renew a still-valid token before it expires so a long class keeps running."""
+    response.headers["Cache-Control"]="no-store"
+    return renew_token(decode_token(credentials))
 
 @app.post("/v1/courses",status_code=201)
 def create_course(data:CourseCreate,db:Session=Depends(session),user:User=Depends(actor)):

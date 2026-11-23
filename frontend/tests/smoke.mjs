@@ -790,3 +790,21 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(quTeacher.includes("btn.dataset.confirm !== '1'"), 'the first press only asks');
  console.log('OK: faculty can delete a course from 내 수업 after confirming');
 }
+{
+ // Live broadcast must survive the sign-in token expiring mid-class and a failed whole-PDF download.
+ const quApi = fs.readFileSync(path.join(root,'assets/qu-api.js'),'utf8');
+ assert.ok(quApi.includes("renewApi('/v1/auth/refresh'") && quApi.includes('keepTokenFresh, tokenExpiry'), 'pages renew their token');
+ assert.ok(quTeacher.includes('const api = client(() => token, lostAuth);'), 'a 401 tries to recover before signing out');
+ assert.ok(quTeacher.includes("if (err.status === 401 && recovering)"), 'a publish retries after renewal');
+ assert.ok(quStudent.includes('window.QU.keepTokenFresh'), 'students renew too');
+ const quLive = fs.readFileSync(path.join(root,'assets/qu-live.js'),'utf8');
+ assert.ok(quLive.includes("if (!deck && !slide) return null;") && !quLive.includes("if (!deck) return null;"), 'presenter can move without the whole PDF');
+ assert.ok(quLive.includes("{raw: true, timeout: 180000}") && quLive.includes('loadDeck(attempt + 1)'), 'the whole PDF retries with a longer timeout');
+ const ctx = {atob: s => Buffer.from(s, 'base64').toString('binary')}; vm.createContext(ctx);
+ const start = quApi.indexOf('function tokenExpiry'), end = quApi.indexOf('// Renews the in-memory token');
+ vm.runInContext(quApi.slice(start, end) + ';this.tokenExpiry=tokenExpiry;', ctx);
+ const payload = Buffer.from(JSON.stringify({exp: 1700000000})).toString('base64url');
+ assert.equal(ctx.tokenExpiry('h.' + payload + '.s'), 1700000000000);
+ assert.equal(ctx.tokenExpiry('garbage'), null);
+ console.log('OK: the live broadcast survives token expiry and a failed whole-PDF download');
+}

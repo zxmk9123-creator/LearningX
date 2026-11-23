@@ -96,6 +96,7 @@
     const pageCacheLimit = 24 * 1024 * 1024;
     let retainedBytes = 0;
     let deck = null;
+    let deckFailed = false;
     let slide = initial?.slide ?? null;
     let selected = null;
     let confirmed = slide;
@@ -502,7 +503,7 @@
       try {
         if (deck) {
           frame = await cached('deck:' + target.page + ':' + w + ':' + h, () => renderPage(deck, target.page, w, h));
-        } else if (target.pdf && (!faculty || !localFile)) {
+        } else if (target.pdf && (!faculty || !localFile || deckFailed)) {
           frame = await pageFrame(target, target.page, w, h);
         }
       } catch (err) {
@@ -678,10 +679,11 @@
     }
 
     function select(number) {
-      if (!deck) return;
+      if (!deck && !slide?.pdf) return;
       selected = number;
       const position = visiblePages.indexOf(number);
-      display({page: number, total: deck.doc.numPages,
+      // Without the whole PDF yet, the page comes from the per-page route (current page and its neighbours).
+      display({page: number, total: deck ? deck.doc.numPages : slide.total, pdf: !deck, version: slide?.version,
         before: visiblePages[position - 1], after: visiblePages[position + 1]});
     }
 
@@ -693,14 +695,28 @@
     if (slide && (!faculty || !localFile)) follow(slide);
     tick();
     if (faculty) {
-      const remote = () => api(path + '/document', {raw: true}).then(res => res.arrayBuffer()).then(loadPdf);
-      const loading = localFile ? localFile.arrayBuffer().then(loadPdf).catch(remote) : remote();
-      loading.then(pdf => {
-        if (stopped) return pdf.doc.destroy();
-        deck = pdf;
-        if (slide && displayed !== slide.page) display(slide);
-        onState({slide, total: deck.doc.numPages});
-      }).catch(() => { if (!stopped) status.textContent = '원본 교안 화면을 불러오지 못했습니다. 수업에 다시 접속해 주세요.'; });
+      // The whole lesson PDF lets the presenter flip pages locally. A large file on a slow
+      // link can take a while, and a failed download must not stop the broadcast: retry, and
+      // meanwhile show and move between pages through the per-page route.
+      const remote = () => api(path + '/document', {raw: true, timeout: 180000}).then(res => res.arrayBuffer()).then(loadPdf);
+      const loadDeck = attempt => (attempt === 0 && localFile ? localFile.arrayBuffer().then(loadPdf).catch(remote) : remote())
+        .then(pdf => {
+          if (stopped) return pdf.doc.destroy();
+          deck = pdf;
+          deckFailed = false;
+          if (slide && displayed !== slide.page) display(slide);
+          onState({slide, total: deck.doc.numPages});
+        })
+        .catch(() => {
+          if (stopped) return;
+          if (!deckFailed) {
+            deckFailed = true;
+            if (slide && displayed !== slide.page) display(slide);
+          }
+          if (attempt < 3) setTimeout(() => { if (!stopped && !deck) loadDeck(attempt + 1); }, [3000, 10000, 30000][attempt]);
+          else if (!displayed) status.textContent = '원본 교안 화면을 불러오지 못했습니다. 수업에 다시 접속해 주세요.';
+        });
+      loadDeck(0);
     }
     return {
       stop, select, resize, page: () => displayed,
@@ -711,10 +727,10 @@
         if (selected === null || selected === result.page) navigation = result;
       },
       neighbor: delta => {
-        if (!deck) return null;
+        if (!deck && !slide) return null;
         const current = selected ?? slide?.page ?? displayed;
         if (current === null) return null;
-        return liveProtocol.neighborPage({visiblePages, navigation, current, delta, pageCount: deck.doc.numPages});
+        return liveProtocol.neighborPage({visiblePages, navigation, current, delta, pageCount: deck ? deck.doc.numPages : slide.total});
       },
       target: () => selected ?? slide?.page ?? displayed,
       total: () => deck?.doc.numPages ?? slide?.total,

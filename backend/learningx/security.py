@@ -18,13 +18,28 @@ def session():
     with SessionLocal() as db:
         yield db
 
-def issue_token(user_id:str, minutes:int=60, *, session_id:str|None=None):
+# A signed-in tab renews its token while it stays open, so a class that runs past the
+# token lifetime is not cut off. Renewal never extends a sign-in beyond this age.
+MAX_SIGN_IN_HOURS = 14
+
+def issue_token(user_id:str, minutes:int=60, *, session_id:str|None=None, auth_time:int|None=None):
     now=datetime.now(timezone.utc)
     claims={"sub":user_id,"aud":"learningx","iss":"learningx-server",
-        "iat":now,"exp":now+timedelta(minutes=minutes)}
+        "iat":now,"exp":now+timedelta(minutes=minutes),
+        "auth_time":auth_time if auth_time is not None else int(now.timestamp())}
     if session_id:
         claims.update(scope="classroom",session_id=session_id)
     return jwt.encode(claims,secret(),algorithm="HS256")
+
+def renew_token(claims:dict):
+    """A fresh token with the same identity, scope and lifetime as a still-valid one."""
+    now=int(datetime.now(timezone.utc).timestamp())
+    auth_time=int(claims.get("auth_time") or claims["iat"])
+    if now-auth_time>MAX_SIGN_IN_HOURS*3600:
+        raise HTTPException(401,"Sign-in is too old to renew; sign in again")
+    minutes=max(1,min(240,round((int(claims["exp"])-int(claims["iat"]))/60)))
+    token=issue_token(claims["sub"],minutes,session_id=claims.get("session_id"),auth_time=auth_time)
+    return {"access_token":token,"expires_in":minutes*60}
 
 def decode_token(credentials):
     if credentials is None:
@@ -68,6 +83,7 @@ def _restrict_classroom_actor(request, claims, db, user):
         ("PUT", "/v1/sessions/{session_id}/live/confusion"),
         ("GET", "/v1/sessions/{session_id}/live/page/{version}"),
         ("GET", "/v1/sessions/{session_id}/browse/{page}"),
+        ("POST", "/v1/auth/refresh"),
         ("POST", "/v1/sessions/{session_id}/questions"),
         ("POST", "/v1/session-questions/{row_id}/revisions"),
         ("POST", "/v1/session-questions/{row_id}/submit"),
@@ -80,6 +96,8 @@ def _restrict_classroom_actor(request, claims, db, user):
     from .classroom import ClassSession, SessionParticipant, SessionQuestion
     bound = claims["session_id"]
     target = request.path_params.get("session_id")
+    if route == "/v1/auth/refresh":
+        target = bound  # renewal keeps the token's own class; membership is still checked below
     if "row_id" in request.path_params:
         row = db.get(SessionQuestion,request.path_params["row_id"])
         if not row or row.student_id != user.id:
@@ -92,5 +110,5 @@ def _restrict_classroom_actor(request, claims, db, user):
     current = db.get(ClassSession,bound)
     if not current:
         raise HTTPException(404,"Session not found")
-    if request.method == "POST" and current.status != "OPEN":
+    if request.method == "POST" and current.status != "OPEN" and route != "/v1/auth/refresh":
         raise HTTPException(423,"The class is not taking questions right now")
