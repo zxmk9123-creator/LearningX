@@ -271,6 +271,9 @@
             ? `판정 보류${preview.reason ? ` · ${UNASSESSED_REASON[preview.reason] || '판정하지 못함'}` : ''}` : `${preview.diagnosis.level_label} 질문` }),
           el('dt', { text: '목표 관련성' }), el('dd', { text: RELEVANCE[preview.goal_relevance] || '판정 보류' }),
           el('dt', { text: '다음 역질문' }), el('dd', { text: preview.follow_up_question || '—' }),
+          preview.evidence_scope === 'all_candidates' ? el('dt', { text: '참고한 교안' }) : null,
+          preview.evidence_scope === 'all_candidates'
+            ? el('dd', { text: '아직 승인 전이라 교안의 모든 내용을 근거로 미리봤어요. 수업에서는 다음 단계에서 승인한 내용만 씁니다.' }) : null,
           preview.ignored_items.length ? el('dt', { text: '반영되지 않은 항목' }) : null,
           preview.ignored_items.length ? el('dd', { text: preview.ignored_items.map((i) => i.text).join(' / ') }) : null) : null,
       ];
@@ -333,7 +336,7 @@
         say('');
       } catch (err) {
         preview = null;
-        say(err.status === 409 ? '교안 내용을 승인하고 AI 코칭에 동의한 뒤 미리볼 수 있어요. 다음 화면에서 승인한 뒤 다시 확인해 보세요.' : err.message);
+        say(err.status === 409 ? '교안에서 코칭에 쓸 수 있는 내용을 찾지 못해 미리볼 수 없어요.' : err.message);
       } finally { busy = false; render(); }
     }
 

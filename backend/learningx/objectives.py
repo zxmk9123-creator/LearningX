@@ -15,7 +15,10 @@ grade students are never stored as instructions.
 """
 import json
 import re
+import shutil
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -455,8 +458,9 @@ class PreviewIn(BaseModel):
 def preview(material_id: str, data: PreviewIn, db: Session = Depends(session), user: User = Depends(actor)):
     """Show the faculty how coaching answers a sample question under a draft profile.
 
-    Uses the same coaching path as a class: signed evidence and the course's
-    coaching consent are required, and a guest class runs without a model.
+    Uses the same coaching path as a class. Before any passage is approved it runs on
+    all eligible passages in a throwaway signed copy, so the objective step (which
+    comes before approval) can be previewed; a guest class runs without a model.
     """
     from types import SimpleNamespace
     from . import engine_adapter as nit
@@ -479,8 +483,25 @@ def preview(material_id: str, data: PreviewIn, db: Session = Depends(session), u
     # (process x support stem, diagnosis unassessed) instead of a 503.
     use_model = not (owner and is_guest(owner)) and nit.model_gateway() is not None
     with private_store.material_workspace(material) as out:
-        coaching = nit.coach_question(out, user.id, data.question, course.policy, course.teacher_approved,
-                                      use_model=use_model, objective=objective)
+        approved = nit.verified_count(out) > 0
+        if approved:
+            # The faculty member is previewing for themselves: the student-facing AI consent
+            # (given on the approval step) does not gate their own preview.
+            coaching = nit.coach_question(out, user.id, data.question, course.policy, True,
+                                          use_model=use_model, objective=objective)
+        else:
+            # The objective step comes BEFORE evidence approval. Preview against every
+            # eligible passage, signed only inside a throwaway copy: nothing is stored or
+            # shown to students, and the real approval step is unchanged.
+            with tempfile.TemporaryDirectory(prefix="learningx-preview-") as scratch:
+                draft_out = Path(scratch) / "parsed"
+                shutil.copytree(out, draft_out, ignore=shutil.ignore_patterns("live-pages", "*.pdf"))
+                passages = nit.candidates(draft_out)
+                if not passages:
+                    raise HTTPException(409, "No lesson passages are available for a preview")
+                nit.approve_material(draft_out, user.id, passages)
+                coaching = nit.coach_question(draft_out, user.id, data.question, course.policy, True,
+                                              use_model=use_model, objective=objective)
     reason = coaching.get("reason")
     if reason == "guest_model_disabled" and not (owner and is_guest(owner)):
         reason = "model_not_configured"
@@ -494,4 +515,6 @@ def preview(material_id: str, data: PreviewIn, db: Session = Depends(session), u
         "follow_up_question": coaching.get("follow_up_question"),
         "evidence_pages": sorted({r.get("page") for r in coaching.get("evidence_refs", []) if isinstance(r, dict)}),
         "ignored_items": ignored,
+        # approved: the faculty-approved passages; all_candidates: before approval, every eligible passage
+        "evidence_scope": "approved" if approved else "all_candidates",
     }

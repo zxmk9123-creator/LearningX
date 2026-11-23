@@ -154,6 +154,10 @@ class ClassAndPreviewTests(unittest.TestCase):
             db.commit()
             self.course_id, self.material_id = course.id, material.id
         self.faculty = issue_token(faculty.id)
+        # Most preview tests describe an already-approved material; the pre-approval path patches this back to 0.
+        approved = patch.object(nit, "verified_count", return_value=1)
+        approved.start()
+        self.addCleanup(approved.stop)
 
     def req(self, method, path, token=None, **kw):
         headers = {"Authorization": "Bearer " + token} if token else {}
@@ -240,6 +244,51 @@ class ClassAndPreviewTests(unittest.TestCase):
         self.assertFalse(call.call_args.kwargs["use_model"])
         self.assertEqual(body["diagnosis"]["level"], "unassessed")
         self.assertEqual(body["reason"], "model_not_configured", "not reported as a guest class")
+
+    def test_preview_before_approval_uses_a_throwaway_copy_of_all_candidates(self):
+        """The objective step comes before evidence approval, so the preview must not require it."""
+        path = f"/v1/materials/{self.material_id}/objective-profiles/preview"
+        passages = [{"id": "p1:b1", "page": 1, "text": "설득 소구"}]
+        seen = {}
+
+        def fake_approve(out, user_id, picked):
+            seen["approve_dir"], seen["picked"] = Path(out), picked
+
+        def fake_coach(out, user_id, question, policy, teacher_approved, **kw):
+            seen["coach_dir"], seen["consent"] = Path(out), teacher_approved
+            return {"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze",
+                    "follow_up_question": "질문?", "reason": "model_not_configured"}
+
+        with patch.object(nit, "verified_count", return_value=0), \
+             patch.object(nit, "candidates", return_value=passages), \
+             patch.object(nit, "approve_material", side_effect=fake_approve) as approve, \
+             patch.object(nit, "coach_question", side_effect=fake_coach):
+            response = self.req("POST", path, self.faculty, json={"profile": PROFILE, "question": "평균이 커진 건 왜예요?"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["evidence_scope"], "all_candidates")
+        self.assertEqual(seen["picked"], passages)
+        self.assertEqual(seen["approve_dir"], seen["coach_dir"])
+        self.assertNotEqual(seen["coach_dir"].parent, Path(TEMP.name), "never signs the real workspace")
+        self.assertFalse(seen["coach_dir"].exists(), "the signed copy is discarded")
+        self.assertTrue(seen["consent"])
+        approve.assert_called_once()
+
+    def test_preview_after_approval_uses_only_approved_evidence(self):
+        with patch.object(nit, "verified_count", return_value=3), \
+             patch.object(nit, "approve_material") as approve, \
+             patch.object(nit, "coach_question", return_value={"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze",
+                                                               "follow_up_question": "질문?"}):
+            body = self.req("POST", f"/v1/materials/{self.material_id}/objective-profiles/preview", self.faculty,
+                            json={"profile": PROFILE, "question": "평균이 커진 건 왜예요?"}).json()
+        self.assertEqual(body["evidence_scope"], "approved")
+        approve.assert_not_called()
+
+    def test_preview_before_approval_without_passages_is_a_clear_409(self):
+        with patch.object(nit, "verified_count", return_value=0), patch.object(nit, "candidates", return_value=[]):
+            response = self.req("POST", f"/v1/materials/{self.material_id}/objective-profiles/preview", self.faculty,
+                                json={"profile": PROFILE, "question": "평균이 커진 건 왜예요?"})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("No lesson passages", response.text)
 
     def test_guest_preview_runs_without_a_model(self):
         self.setUp(email=f"g-{uid()}{GUEST_DOMAIN}")
