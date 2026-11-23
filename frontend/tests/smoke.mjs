@@ -651,7 +651,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  const coaching = [];
  const replies = [];
  const ctx = vm.createContext({$, el, token: 'test', document: {}, clearTimeout(){}, setTimeout(){},
-  st: {session: {id:'class', status:'OPEN'}, sentCount:0}, crypto: {randomUUID: () => 'batch-id'},
+  st: {session: {id:'class', status:'OPEN', chat_open:true}, sentCount:0}, crypto: {randomUUID: () => 'batch-id'},
   updateComposer(){}, coachMsg(...parts){ replies.push(parts); },
   renderCoaching(...parts){ coaching.push(parts); },
   api: async (path, options) => {
@@ -751,4 +751,16 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.deepEqual([...drafts.keys()], ['q1', 'q2']);
  assert.equal(outcomes.at(-1).suitability.status, 'needs_revision');
  console.log('OK: the card starts collapsed, new questions accumulate, and a revision changes only one draft');
+}
+{
+ // Faculty hold the question chat: locked by default, unlocked from the live board.
+ assert.ok(teacher.includes('id="chat-toggle"') && !teacher.includes('id="pause-toggle"'), 'the chat switch replaces the pause button');
+ assert.ok(quTeacher.includes('/chat`, { method: \'PUT\', body: { open: !s.chat_open } }'), 'the switch flips the chat');
+ assert.ok(student.includes('id="chat-lock"'), 'students see the locked notice');
+ assert.ok(quStudent.includes("const openForQuestions = () => st.session?.status === 'OPEN' && chatOpen();"), 'writing needs an open chat');
+ assert.ok(quStudent.includes("st.session?.chat_open === true"), 'a missing flag counts as locked');
+ assert.ok(quStudent.includes("err.detail === 'CHAT_LOCKED') applyChat(false)"), 'a locked reply locks the screen');
+ const css = fs.readFileSync(path.join(root,'assets/qu.css'),'utf8');
+ assert.ok(css.includes('#screen-coach.is-chat-locked .composer-wrap'), 'the composer is hidden while locked');
+ console.log('OK: the question chat stays locked until the teacher opens it');
 }

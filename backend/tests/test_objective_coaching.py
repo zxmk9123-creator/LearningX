@@ -163,6 +163,7 @@ class ClassAndPreviewTests(unittest.TestCase):
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.req("POST", f"/v1/courses/{self.course_id}/sessions", self.faculty,
                               json={"material_id": self.material_id}).json()
+        self.req("PUT", f"/v1/sessions/{opened['id']}/chat", self.faculty, json={"open": True})
         student = self.req("POST", "/v1/join", json={"code": opened["join_code"]}).json()["access_token"]
         with patch.object(nit, "coach_question", return_value=coaching) as coach_call:
             asked = self.req("POST", f"/v1/sessions/{opened['id']}/questions", student,

@@ -69,6 +69,7 @@ class StudentLiveScopeTests(unittest.TestCase):
             opened = self.req("POST", f"/v1/courses/{course_id}/sessions", self.faculty,
                               json={"material_id": material_id}).json()
         self.session_id = opened["id"]
+        self.req("PUT", f"/v1/sessions/{self.session_id}/chat", self.faculty, json={"open": True})
         self.path = f"/v1/sessions/{self.session_id}/live"
         # Page 2 is shared with presenter-only fields and legacy content alongside.
         self.assertEqual(self.req("PUT", self.path, self.faculty, json={"page": 2}).status_code, 200)

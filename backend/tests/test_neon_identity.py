@@ -214,6 +214,7 @@ class NeonIdentityTests(unittest.TestCase):
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.client.post(f"/v1/courses/{course_id}/sessions", json={"material_id": material_id},
                                       headers={"Authorization": "Bearer " + faculty}).json()
+        self.client.put(f"/v1/sessions/{opened['id']}/chat", json={"open": True}, headers={"Authorization": "Bearer " + faculty})
         ticket = self.exchange(self.token(), role="student").json()["join_ticket"]
         first = self.client.post("/v1/join", json={"code": opened["join_code"]}, headers={"Authorization": "Bearer " + ticket})
         again = self.client.post("/v1/join", json={"code": opened["join_code"]}, headers={"Authorization": "Bearer " + ticket})
@@ -249,6 +250,7 @@ class FacultySeesGoogleStudentNames(NeonIdentityTests):
             course_id, material_id = course.id, material.id
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.client.post(f"/v1/courses/{course_id}/sessions", json={"material_id": material_id}, headers=fh).json()
+        self.client.put(f"/v1/sessions/{opened['id']}/chat", json={"open": True}, headers=fh)
         email, sub = f"kim-{uid()[:6]}@hanyang.ac.kr", "neon-" + uid()
         ticket = self.exchange(self.token(sub, email=email, name="  김  하늘 "), role="student").json()["join_ticket"]
         google = self.client.post("/v1/join", json={"code": opened["join_code"]}, headers={"Authorization": "Bearer " + ticket}).json()["access_token"]

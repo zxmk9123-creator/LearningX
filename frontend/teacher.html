@@ -23,7 +23,7 @@
       <span data-step="4"><i>4</i>수업 시작</span>
     </nav>
     <span class="chip ok" id="live-chip" hidden><span class="dot"></span>질문 받는 중</span>
-    <span class="chip" id="paused-chip" hidden>잠시 멈춤</span>
+    <span class="chip" id="paused-chip" hidden>채팅 잠김</span>
     <a class="btn ghost sm" id="to-courses" href="#courses" hidden>내 수업</a>
   </div>
 </header>
@@ -158,8 +158,13 @@
         <div class="row between"><span class="sub">입장한 학생</span><b id="live-joined">0명</b></div>
         <div class="row between"><span class="sub">받은 질문</span><b id="live-total">0개</b></div>
         <hr>
-        <div class="row"><button class="btn grow" type="button" id="pause-toggle">질문 받기 멈춤</button>
-          <button class="btn grow" type="button" id="end-class">수업 종료</button></div>
+        <div class="chat-gate">
+          <div class="row between"><span class="sub">학생 질문 채팅</span><b id="chat-state">잠김</b></div>
+          <button class="btn primary block" type="button" id="chat-toggle" aria-pressed="false">질문 채팅 열기</button>
+          <p class="sub" id="chat-hint">질문 시간이 되면 열어 주세요. 열기 전에는 학생이 교안만 볼 수 있어요.</p>
+        </div>
+        <hr>
+        <button class="btn block" type="button" id="end-class">수업 종료</button>
       </aside>
       <section class="stack" aria-label="들어온 질문">
         <div class="row between">

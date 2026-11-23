@@ -75,6 +75,7 @@ class UnassessedLevelTests(unittest.TestCase):
                               json={"material_id": material_id}).json()
         self.session_id = opened["id"]
         self.code = opened["join_code"]
+        self.req("PUT", f"/v1/sessions/{self.session_id}/chat", self.faculty, json={"open": True})
 
     def req(self, method, path, token=None, **kw):
         headers = {"Authorization": "Bearer " + token} if token else {}

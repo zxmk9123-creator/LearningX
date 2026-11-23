@@ -80,6 +80,7 @@ class ClassroomTests(unittest.TestCase):
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.req("POST", f"/v1/courses/{cid}/sessions", self.tf,
                               json={"material_id": self.material_id}).json()
+        self.req("PUT", f"/v1/sessions/{opened['id']}/chat", self.tf, json={"open": True})
         path = f"/v1/sessions/{opened['id']}"
         first, second = [
             self.req("POST", "/v1/join", json={"code": opened["join_code"]}).json()["access_token"]
@@ -329,6 +330,7 @@ class ClassroomTests(unittest.TestCase):
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.req("POST", course + "/sessions", self.tf,
                               json={"material_id": self.material_id}).json()
+        self.req("PUT", f"/v1/sessions/{opened['id']}/chat", self.tf, json={"open": True})
         student = self.req("POST", "/v1/join", json={"code": opened["join_code"]}).json()["access_token"]
         path = f"/v1/sessions/{opened['id']}/live"
         stamp = self.req("GET", path, student).json()["revision"]
@@ -364,6 +366,7 @@ class ClassroomTests(unittest.TestCase):
         self.assertEqual(r.status_code, 201, r.text)
         sess = r.json()
         code, sid = sess["join_code"], sess["id"]
+        self.req("PUT", f"/v1/sessions/{sid}/chat", self.tf, json={"open": True})
         self.assertEqual(len(code), 6)
         self.assertTrue(all(ch in classroom.JOIN_ALPHABET for ch in code))
 
@@ -483,6 +486,7 @@ class ClassroomTests(unittest.TestCase):
                               json={"material_id": self.material_id})
         self.assertEqual(opened.status_code, 201, opened.text)
         session = opened.json()
+        self.req("PUT", f"/v1/sessions/{session['id']}/chat", self.tf, json={"open": True})
         joined = self.req("POST", "/v1/join", json={"code": session["join_code"]})
         self.assertEqual(joined.status_code, 200, joined.text)
         return session["id"], joined.json()["access_token"]

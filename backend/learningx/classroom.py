@@ -74,6 +74,26 @@ class ClassSession(Base):
     projected_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class SessionChatAccess(Base):
+    """Whether students may use the question chat. Faculty hold this switch: a class
+    opens with the chat locked and the teacher unlocks it when the question time
+    starts. No row means locked. A separate table keeps class_sessions unchanged
+    (create_all adds tables, not columns)."""
+    __tablename__ = "session_chat_access"
+    session_id: Mapped[str] = mapped_column(ForeignKey("class_sessions.id"), primary_key=True)
+    open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    changed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False)
+
+
+CHAT_LOCKED = "CHAT_LOCKED"
+
+
+def chat_open(db, session_id: str) -> bool:
+    row = db.get(SessionChatAccess, session_id)
+    return bool(row and row.open)
+
+
 class SessionParticipant(Base):
     __tablename__ = "session_participants"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
@@ -146,6 +166,10 @@ class OpenSession(BaseModel):
 
 class SessionState(BaseModel):
     status: Literal["OPEN", "PAUSED", "CLOSED"]
+
+
+class ChatAccess(BaseModel):
+    open: bool
 
 
 class JoinRequest(BaseModel):
@@ -364,10 +388,13 @@ def _public_sessions(db, sessions, faculty=False) -> list[dict]:
             stats[session_id] = {"participants": participants.get(session_id, 0),
                                  "questions_submitted": total, "questions_deep": deep,
                                  "questions_revised": revised, "questions_projected": projected}
+    opened = {row.session_id for row in db.query(SessionChatAccess.session_id)
+              .filter(SessionChatAccess.session_id.in_(ids), SessionChatAccess.open.is_(True))}
     result = []
     for s in sessions:
         data = {"id": s.id, "course_id": s.course_id, "course_title": titles.get(s.course_id, ""),
-                "status": s.status, "created_at": _iso(s.created_at), "closed_at": _iso(s.closed_at)}
+                "status": s.status, "chat_open": s.status != "CLOSED" and s.id in opened,
+                "created_at": _iso(s.created_at), "closed_at": _iso(s.closed_at)}
         if faculty:
             item = stats[s.id]
             data.update({
@@ -496,6 +523,25 @@ def set_state(session_id: str, data: SessionState, db: Session = Depends(session
     if data.status == "CLOSED":
         s.closed_at = now()
     _audit(db, user.id, s.course_id, "session_" + data.status.lower(), s.material_id)
+    db.commit()
+    notify(s.id)
+    return _public_session(db, s, faculty=True)
+
+
+@router.put("/sessions/{session_id}/chat")
+def set_chat_access(session_id: str, data: ChatAccess, db: Session = Depends(session), user: User = Depends(actor)):
+    """Faculty unlock or lock the students' question chat for this class."""
+    s = _faculty_session(db, session_id, user)
+    db.refresh(s, with_for_update=True)
+    if s.status == "CLOSED":
+        raise HTTPException(409, "Session already closed")
+    row = db.get(SessionChatAccess, s.id)
+    if row is None:
+        row = SessionChatAccess(session_id=s.id, open=data.open, changed_by=user.id)
+        db.add(row)
+    elif row.open != data.open:
+        row.open, row.changed_by, row.changed_at = data.open, user.id, now()
+    _audit(db, user.id, s.course_id, "chat_opened" if data.open else "chat_locked", s.material_id)
     db.commit()
     notify(s.id)
     return _public_session(db, s, faculty=True)
@@ -635,7 +681,7 @@ def _slide_metadata(slide, version=""):
 def _snapshot(db, current, user, faculty, version, cursor=None):
     session_id = current.id
     if current.status == "CLOSED":
-        return {"status": current.status, "slide": None, "index": []}
+        return {"status": current.status, "chat_open": False, "slide": None, "index": []}
     slide = db.get(LiveSlide, session_id, options=[undefer(LiveSlide.content)])
     query = db.query(SessionQuestion.id, SessionQuestion.level, QuestionSlide.page,
                      SessionQuestion.latest_text, QuestionAnchor.location).join(
@@ -696,7 +742,8 @@ def _snapshot(db, current, user, faculty, version, cursor=None):
                 LiveTransition.position > prior.position,
                 LiveTransition.position <= latest.position,
             ).order_by(LiveTransition.position).limit(32)]
-    return {"status": current.status, "slide": snapshot, "index": index, "confusion": confusion, "transitions": transitions}
+    return {"status": current.status, "chat_open": chat_open(db, session_id), "slide": snapshot, "index": index,
+            "confusion": confusion, "transitions": transitions}
 
 
 @router.get("/sessions/{session_id}/live/document")
@@ -1310,6 +1357,8 @@ def _lock_open(db, s):
     db.refresh(s, with_for_update=True)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
+    if not chat_open(db, s.id):
+        raise HTTPException(423, CHAT_LOCKED)
 
 
 def _dispatch_check(background_tasks, row_id, revision_id):
@@ -1336,6 +1385,8 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
     s = _participant_session(db, session_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
+    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+        raise HTTPException(423, CHAT_LOCKED)
     if data.request_id:
         seen = db.get(fit.AskRequest, (s.id, user.id, data.request_id))
         if seen:
@@ -1398,6 +1449,8 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
     row, s = _own_row(db, row_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
+    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+        raise HTTPException(423, CHAT_LOCKED)
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
     coaching = ({"mode": "suitability_blocked"} if fit.intake_reasons(data.text, anchored=fit.has_anchor(db, row.id))
@@ -1474,6 +1527,8 @@ def session_submit(row_id: str, data: SingleSubmit | None = None,
     row, s = _own_row(db, row_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
+    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+        raise HTTPException(423, CHAT_LOCKED)
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)
     if not row.submitted:

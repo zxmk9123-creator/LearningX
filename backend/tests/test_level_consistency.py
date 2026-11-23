@@ -151,6 +151,8 @@ class RootLedgerTests(unittest.TestCase):
         with patch.object(nit, "verified_count", return_value=1):
             opened = self.client.post(f"/v1/courses/{course_id}/sessions", json={"material_id": material_id},
                                       headers={"Authorization": "Bearer " + faculty_token}).json()
+        self.client.put(f"/v1/sessions/{opened['id']}/chat", json={"open": True},
+                        headers={"Authorization": "Bearer " + faculty_token})
         return opened["join_code"], opened["id"]
 
     def ask(self, code, session_id, text, coaching):

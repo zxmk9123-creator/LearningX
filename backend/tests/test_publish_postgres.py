@@ -104,6 +104,7 @@ class PostgresPublishTests(unittest.TestCase):
                               json={"material_id": self.material_id})
         self.assertEqual(opened.status_code, 201, opened.text)
         body = opened.json()
+        self.req("PUT", f"/v1/sessions/{body['id']}/chat", self.faculty, json={"open": True})
         student = self.req("POST", "/v1/join", json={"code": body["join_code"]}).json()["access_token"]
         return body["id"], body["initial_live"]["slide"]["version"], student
 

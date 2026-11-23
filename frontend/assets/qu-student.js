@@ -174,7 +174,9 @@
   let draftPoll;
   let draftRead = 0;
 
-  const openForQuestions = () => st.session?.status === 'OPEN';
+  // Faculty hold the chat: it stays locked until the teacher opens it at question time.
+  const chatOpen = () => st.session?.chat_open === true;
+  const openForQuestions = () => st.session?.status === 'OPEN' && chatOpen();
   function selectable(draft) {
     return openForQuestions() && draft.revision_id && draft.suitability?.status === 'eligible';
   }
@@ -507,11 +509,13 @@
     paintDrafts();
     resetThread();
     refreshDrafts();
+    applyChat(chatOpen());
     applyStatus(st.session.status);
     stopPoll();
     liveView = window.QU.createLiveView({
       api, session: st.session.id, panel: $('student-slide'), initial,
       onAnchor: ({page, anchor}) => {
+        if (!chatOpen()) return '교수자가 질문 채팅을 열면 이 부분으로 질문할 수 있어요.';
         if (st.current || st.sending) return false;
         questionAnchor = {page, anchor};
         const input = $('q-input');
@@ -535,8 +539,9 @@
         }
         return true;
       },
-      onState: ({status}) => {
-        if (status !== st.session.status) applyStatus(status);
+      onState: ({status, chat_open: open}) => {
+        if (typeof open === 'boolean' && open !== chatOpen()) applyChat(open);
+        if (status && status !== st.session.status) applyStatus(status);
       },
       onQuestion: async (id) => {
         await showMine();
@@ -561,7 +566,8 @@
 
   function updateComposer() {
     const v = $('q-input').value.trim();
-    const open = st.session && st.session.status === 'OPEN';
+    const open = openForQuestions();
+    $('q-input').disabled = !open;
     const hasBlank = BLANK.test(v);
     $('send').disabled = !open || st.sending || batchSending || !v || hasBlank;
     $('hint').textContent = hasBlank ? '빈칸(___)에 교안의 개념이나 수업에서 다룬 사례·근거를 넣어 주세요'
@@ -640,6 +646,7 @@
       if (err.status === 423) { await pollStatus(); }
       coachMsg(el('span', { text: err.status === 423 ? '지금은 질문을 받지 않는 중이에요. 교수자가 다시 열면 이어서 보낼 수 있어요.'
         : err.status === 409 ? '이미 교수자에게 보낸 질문이에요. 새 질문을 써 주세요.' : `${err.message} 다시 보내 볼까요?` }));
+      if (err.status === 423 && err.detail === 'CHAT_LOCKED') applyChat(false);
       if (err.status === 409) st.current = null;
       if (err.status !== 409) $('q-input').value = text;
     } finally {
@@ -738,7 +745,7 @@
       el('b', { text: res.text }),
       res.original && res.original !== res.text ? el('span', { class: 'muted', text: `처음 질문: ${res.original}` }) : null);
     $('sent-mine').textContent = `내가 보낸 질문 ${st.sentCount}개`;
-    $('ask-another').disabled = st.session.status !== 'OPEN';
+    $('ask-another').disabled = !openForQuestions();
   }
   $('ask-another').addEventListener('click', () => { showScreen('coach'); resetThread(); });
   $('sent-mine').addEventListener('click', showMine);
@@ -781,6 +788,17 @@
   $('mine-back').addEventListener('click', () => { showScreen('coach'); updateComposer(); });
 
   /* ---------- 수업 상태 ---------- */
+  function applyChat(open) {
+    const wasOpen = chatOpen();
+    st.session.chat_open = open;
+    const coach = $('screen-coach');
+    coach.classList.toggle('is-chat-locked', !open);
+    $('chat-lock').hidden = open || st.session.status === 'CLOSED';
+    updateComposer();
+    paintDrafts();
+    if (open && !wasOpen && !coach.hidden && matchMedia('(pointer: fine)').matches) $('q-input').focus({preventScroll: true});
+  }
+
   function applyStatus(status) {
     st.session.status = status;
     const banner = $('status-banner');
@@ -800,6 +818,7 @@
     if (!st.session || !token) return;
     try {
       const s = await api(`/v1/sessions/${st.session.id}`);
+      if (s.chat_open !== chatOpen()) applyChat(s.chat_open === true);
       if (s.status !== st.session.status) applyStatus(s.status);
     } catch (_) { /* transient; next tick retries */ }
   }

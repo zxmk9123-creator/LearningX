@@ -212,7 +212,7 @@
   function courseAction(c) {
     if (c.openSession) {
       return { label: '수업 이어가기', cls: 'btn primary', href: `#live/${c.openSession.id}`,
-        meta: c.openSession.status === 'PAUSED' ? '잠시 멈춤' : '질문 받는 중', chip: 'ok' };
+        meta: c.openSession.status === 'PAUSED' ? '잠시 멈춤' : c.openSession.chat_open ? '질문 받는 중' : '채팅 잠김', chip: 'ok' };
     }
     const signed = c.materials.find((m) => m.status === 'FACULTY_SIGNED');
     const pending = c.materials.find((m) => m.status === 'PENDING_FACULTY_REVIEW');
@@ -748,8 +748,16 @@
 
   function paintLiveHeader() {
     const s = state.live.session;
-    header({ crumb: s.course_title, step: 4, live: s.status === 'OPEN', paused: s.status === 'PAUSED', back: true });
-    $('pause-toggle').textContent = s.status === 'PAUSED' ? '질문 다시 받기' : '질문 받기 멈춤';
+    const chatting = s.status === 'OPEN' && s.chat_open === true;
+    header({ crumb: s.course_title, step: 4, live: chatting, paused: !chatting, back: true });
+    $('paused-chip').textContent = s.status === 'PAUSED' ? '잠시 멈춤' : '채팅 잠김';
+    const toggle = $('chat-toggle');
+    if (!toggle.disabled) toggle.textContent = s.chat_open ? '질문 채팅 닫기' : '질문 채팅 열기';
+    toggle.className = s.chat_open ? 'btn block' : 'btn primary block';
+    toggle.setAttribute('aria-pressed', String(!!s.chat_open));
+    $('chat-state').textContent = s.chat_open ? '열림' : '잠김';
+    $('chat-hint').textContent = s.chat_open ? '학생이 질문을 쓰고 AI 코칭을 받을 수 있어요. 닫으면 새 질문과 전송이 멈춰요.'
+      : '질문 시간이 되면 열어 주세요. 열기 전에는 학생이 교안만 볼 수 있어요.';
     $('live-joined').textContent = `${s.participants || 0}명`;
   }
 
@@ -856,12 +864,15 @@
     try { await api(path, { method: 'POST' }); await refreshBoard(); } catch (err) { globalError(err); }
   }
 
-  $('pause-toggle').addEventListener('click', async () => {
+  $('chat-toggle').addEventListener('click', async () => {
     const s = state.live.session;
-    const btn = $('pause-toggle');
-    busy(btn, true);
+    const btn = $('chat-toggle');
+    busy(btn, true, s.chat_open ? '닫는 중…' : '여는 중…');
     try {
-      state.live.session = await api(`/v1/sessions/${s.id}/state`, { method: 'PUT', body: { status: s.status === 'PAUSED' ? 'OPEN' : 'PAUSED' } });
+      // A paused class from before the chat switch resumes with the chat.
+      if (!s.chat_open && s.status === 'PAUSED') await api(`/v1/sessions/${s.id}/state`, { method: 'PUT', body: { status: 'OPEN' } });
+      const updated = await api(`/v1/sessions/${s.id}/chat`, { method: 'PUT', body: { open: !s.chat_open } });
+      Object.assign(state.live.session, updated);
       busy(btn, false);
       paintLiveHeader();
     } catch (err) { busy(btn, false); globalError(err); }

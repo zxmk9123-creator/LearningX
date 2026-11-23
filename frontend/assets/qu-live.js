@@ -246,8 +246,9 @@
     function askHere() {
       pickText();
       if (!displayed || !open) return;
-      if (!onAnchor?.({page: displayed, anchor: picked})) {
-        feedback.textContent = '지금 작성 중인 질문을 먼저 마무리해 주세요.';
+      const accepted = onAnchor?.({page: displayed, anchor: picked});
+      if (accepted !== true) {
+        feedback.textContent = typeof accepted === 'string' ? accepted : '지금 작성 중인 질문을 먼저 마무리해 주세요.';
         return;
       }
       feedback.textContent = displayed + '쪽에 질문을 붙여요.';

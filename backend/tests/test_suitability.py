@@ -90,6 +90,7 @@ class SuitabilityTests(unittest.TestCase):
             opened = self.req("POST", f"/v1/courses/{self.course_id}/sessions", self.faculty,
                               json={"material_id": self.material_id}).json()
         self.session_id, self.code = opened["id"], opened["join_code"]
+        self.req("PUT", f"/v1/sessions/{self.session_id}/chat", self.faculty, json={"open": True})
 
     def req(self, method, path, token=None, **kw):
         headers = {"Authorization": "Bearer " + token} if token else {}
