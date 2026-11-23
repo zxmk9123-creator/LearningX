@@ -4,6 +4,13 @@ import json, re, unicodedata, argparse
 from text_normalization import BAD_SCRIPTS, dangerous_characters
 from pathlib import Path
 
+# Latin-1 characters that ordinary lecture text uses (units, signs, quotes); the rest of
+# U+00A1-U+00FF in bulk is the signature of a font whose ToUnicode map is wrong
+# (Korean drawn by Type3 fonts read back as 'Piagetß ÿÉ¼þ').
+_LATIN1_ORDINARY=set('°±²³·×©®«»µ¹ºª¶§')
+def latin1_noise(text):
+    return sum(1 for c in text if '\u00a1'<=c<='\u00ff' and c not in _LATIN1_ORDINARY)
+
 def evaluate(text, source_type='native', min_content_chars=12):
     text=str(text or '')
     chars=[c for c in text if c.isalpha()]
@@ -17,9 +24,11 @@ def evaluate(text, source_type='native', min_content_chars=12):
     if other_marks:reasons.append('private_use_characters')
     if n>=6 and (foreign>=4 and ratio>=0.12):reasons.append('unexpected_script_mixture')
     if n>=6 and foreign>=10:reasons.append('many_unexpected_script_chars')
+    noise=latin1_noise(text)
+    if noise>=4 and noise/max(n,1)>=0.15:reasons.append('legacy_encoding_mojibake')
     if n<min_content_chars:reasons.append('low_content_text')
     # A Korean lecture can intentionally include foreign scripts; block on high suspicion and review manually.
-    quarantine=any(r in reasons for r in ('replacement_or_null_character','private_use_characters','unexpected_script_mixture','many_unexpected_script_chars'))
+    quarantine=any(r in reasons for r in ('replacement_or_null_character','private_use_characters','unexpected_script_mixture','many_unexpected_script_chars','legacy_encoding_mojibake'))
     status='QUARANTINED' if quarantine else ('LOW_CONTENT_REVIEW' if 'low_content_text' in reasons else 'NATIVE_UNREVIEWED')
     return {'status':status,'eligible_for_coaching':not quarantine and n>=min_content_chars and source_type not in ('ocr','vision'),
             'reasons':reasons,'unexpected_script_ratio':round(ratio,4),'alphabetic_chars':n,'method':'unicode_heuristic_v1; not factual verification'}
