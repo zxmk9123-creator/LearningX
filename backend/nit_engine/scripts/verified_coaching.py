@@ -6,11 +6,13 @@ service MUST authenticate reviewer and securely manage the secret.
 import argparse,hashlib,hmac,json,os,datetime,re,unicodedata
 from pathlib import Path
 from policy import authorize
-STEMS={'clarify':'질문의 핵심 개념을 먼저 한 문장으로 정의할 수 있을까요?',
-'apply':'이 개념을 다른 사례에 적용하면 무엇이 달라질까요?',
-'analyze':'이 주장에 담긴 가정과 근거를 구분하면 어떤 질문이 생길까요?',
-'evaluate':'반례나 다른 해석은 무엇일까요?',
-'create':'새로운 대안을 검토하려면 어떤 조건을 바꿀 수 있을까요?'}
+# Shown when no model can coach (guest classes, no model configured): plain words a
+# student can answer without knowing the lesson's vocabulary.
+STEMS={'clarify':'이 개념이 어디에 쓰이는지와 왜 중요한지 중 어느 쪽이 더 궁금한가요?',
+'apply':'이 개념을 내 주변의 어떤 예에 써 볼 수 있을까요?',
+'analyze':'이런 일이 왜 생기는지와 무엇과 다른지 중 어느 쪽이 더 궁금한가요?',
+'evaluate':'어떤 기준으로 보면 더 낫다고 말할 수 있을까요?',
+'create':'조건 하나를 바꾸면 어떤 새로운 방법을 생각할 수 있을까요?'}
 
 def canonical(obj):return json.dumps(obj,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode('utf-8')
 def block_text(b):return b.get('text') or ' / '.join(' | '.join(map(str,r)) for r in b.get('rows',[]))
