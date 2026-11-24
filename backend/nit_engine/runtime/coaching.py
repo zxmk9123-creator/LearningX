@@ -313,6 +313,9 @@ def run_coaching(out, question, policy, teacher_approved, signing_secret, authen
                 answer['question_frames']=obj['question_frames']
             if conversation:
                 answer['conversation_turn']=conversation.get('turn')
+            if errors:
+                # A rejected first attempt is still worth seeing after an accepted retry.
+                answer['model_errors']=errors[-3:]
             return answer
         except GatewayTimeout:
             # A timeout does not imply invalid JSON. Avoid another slow call.
