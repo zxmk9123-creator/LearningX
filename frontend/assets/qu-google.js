@@ -4,7 +4,7 @@
  * Tokens stay in memory (no browser storage). */
 (() => {
   'use strict';
-  const NEON_AUTH_URL = 'https://ep-empty-breeze-b3t239qi.neonauth.c-4.ap-southeast-1.aws.neon.tech/learningx/auth';
+  const NEON_AUTH_URL = 'https://ep-late-darkness-biqqwodu.neonauth.c-5.ap-southeast-1.aws.neon.tech/neondb/auth';
   const MESSAGES = {
     domain_not_allowed: (d) => `학교 Google 계정(${(d.domains || []).map((x) => '@' + x).join(', ')})으로 로그인해 주세요.`,
     email_unverified: () => 'Google에서 이메일 확인이 끝난 계정만 사용할 수 있어요.',

@@ -38,7 +38,7 @@ from .security import issue_token, secret, session
 from .storage import Base, User
 
 # Public endpoint of the learningx-pilot main branch (not a secret); override per environment.
-DEFAULT_AUTH_URL = "https://ep-empty-breeze-b3t239qi.neonauth.c-4.ap-southeast-1.aws.neon.tech/learningx/auth"
+DEFAULT_AUTH_URL = "https://ep-late-darkness-biqqwodu.neonauth.c-5.ap-southeast-1.aws.neon.tech/neondb/auth"
 JWKS_TTL_SECONDS = 600
 DEFAULT_ALLOWED_DOMAINS = "hanyang.ac.kr"
 STUDENT_TICKET_MINUTES = 30
