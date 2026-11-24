@@ -23,9 +23,9 @@
 `sha256(종류, 루트 정책 버전, 맥락 지문, 정규화한 질문)`
 
 - **정규화:** NFKC, 연속 공백을 하나로, 끝의 물음표·마침표 제거.
-- **코칭 맥락 지문:** 교안 ID와 sha256, 서명 근거 집합 지문, 코스 정책, 교수자 승인 여부, 학습목표 프로필 버전.
+- **코칭 맥락 지문:** 교안 ID와 sha256, 서명 근거 집합 지문, 코스 정책, 교수자 승인 여부, 학습목표 프로필 버전, 고쳐 쓰기일 때는 이전 턴 대화 지문.
 - **적합성 맥락 지문:** 교안 ID, 코스명, 쪽, 학생이 선택한 인용, 학습목표.
-- **코칭 루트 정책 버전** = `nit_coaching_v1 + coaching-prompt-v3 + level-rubric-v1 + guardrails-v1`
+- **코칭 루트 정책 버전** = `nit_coaching_v1 + coaching-prompt-v4 + level-rubric-v1 + guardrails-v1`
 - **적합성 루트 정책 버전** = `suitability-v1 + suitability-prompt-v1`
 - **규칙을 하나라도 바꾸면 해당 버전을 올린다.** 그러면 원장이 새로 시작되어, 옛 결정이 새 규칙 아래에서 재생되지 않는다.
 
@@ -37,12 +37,15 @@
 | I2 | 공급자 장애 중에도 이미 결정된 질문은 같은 결정을 받는다 | 원장 조회가 모델 호출보다 먼저 | `test_a_provider_outage_still_replays_the_decision` |
 | I3 | 수준 단서가 있는 질문은 모델과 무관하게 같은 단계로 판정된다 (이유·영향·비교·관계·적용 → 중간, 기준 판단·선택·설계 → 깊은, 정의·지칭·구성·사실 → 얕은) | `runtime/level_rules.py` | `RepeatedModelDriftTests` |
 | I4 | 학생에게 가는 모델 문장은 한국어 질문 한 문장이다. 정답·해설·결론 암시, 모델 자기언급, 학생 질문 되풀이, 교안 원문 복사, URL은 없다 | `runtime/guardrails.py`, `validate_model_response` | `GuardrailTests` |
-| I5 | 피드백 문구는 루트 고정 문구만 쓴다 (모델 자유 서술 없음) | `run_coaching` | `test_feedback_is_the_fixed_root_sentence` |
+| I5 | `feedback` 필드는 루트 고정 문구만 쓴다. 모델 문장은 가드레일을 통과한 역질문·수준 이유·질문 틀뿐이다 | `run_coaching` | `test_feedback_is_the_fixed_root_sentence` |
 | I6 | 폴백은 수준을 빌리지 않는다 (판정 보류). 원장에도 남지 않는다 | `_fallback`, `judgments.coaching_decision` | `test_unassessed_level`, `test_fallbacks_are_not_decisions` |
 | I7 | 같은 교안 맥락의 같은 질문은 적합성 판정이 바뀌지 않는다. 결정론 규칙은 언제나 우선한다 | `suitability.run`, `effective_check` | `test_the_root_ledger_keeps_a_verdict_whichever_model_answers_next` |
 | I8 | 맥락(교안·근거·학습목표 버전)이 바뀌면 새로 판정한다 | 맥락 지문 | `test_another_class_material_decides_afresh`, `test_a_different_lesson_gets_its_own_verdict` |
 | I9 | 모델 호출은 temperature 0과 고정 seed로 한다 (`NIT_LLM_SEED`, 기본 7). seed를 거부하는 공급자에게는 seed 없이 1회만 다시 호출한다 | `runtime/gateway.py` | `GatewayTests` |
 | I10 | 학생·교수자 화면은 화이트리스트 필드만 받는다. 모델 이름과 원판정은 운영 기록에만 남는다 | `_student_coaching`, 보드 직렬화 | `test_classroom` (model_observability 미노출) |
+| I11 | 수준 이유(`level_reason`)는 최종 수준을 설명한다. 루브릭이 모델 수준을 바꾸면 모델 문장 대신 규칙 이유(`RULE_REASONS`)를 쓴다. 80자 이내, 물음표 없음, I4 가드레일 통과. 어긋나면 버리고 고정 피드백을 쓴다 | `_clean_reason`, `run_coaching` | `test_coaching_phase2.ReasonTests` |
+| I12 | 질문 틀(`question_frames`)은 빈칸(`___`)이 있는 질문 최대 2개다. 빈칸 없는 완성 질문, 정답 암시, 학생 질문 되풀이는 버린다. 틀이 없으면 고정 템플릿을 쓴다 | `_clean_frames`, `guideFor` | `test_coaching_phase2.FrameTests` |
+| I13 | 고쳐 쓰기에는 같은 질문의 이전 턴(처음 질문, 직전 질문, 직전 역질문·수준)을 서버 기록에서만 넘긴다. 직전 역질문을 그대로 되풀이하면 거절한다. 대화 지문이 원장 맥락에 들어가 다른 대화 뒤의 같은 문장은 새로 판정한다 | `_coaching_history`, `_conversation`, `classroom._coach` | `test_coaching_phase2.ConversationTests` |
 
 ## 운영 관측 (저장 코칭 JSON)
 

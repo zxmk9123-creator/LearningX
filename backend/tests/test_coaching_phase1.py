@@ -99,7 +99,7 @@ class EngineNoEvidenceTests(unittest.TestCase):
         self.assertEqual((result["evidence_mode"], result["evidence_refs"]), ("matched", [{"id": "p2:b1", "page": 2}]))
 
     def test_policy_version_moved_on(self):
-        self.assertIn("coaching-prompt-v3", engine.ROOT_POLICY_VERSION)
+        self.assertIn("coaching-prompt-v4", engine.ROOT_POLICY_VERSION)
 
     def test_plain_stems_pass_the_follow_up_rules(self):
         for level, stem in engine.STEMS.items():

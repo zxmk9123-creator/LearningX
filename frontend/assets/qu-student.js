@@ -693,9 +693,11 @@
     setStage(level);
 
     const parts = [el('span', { class: `lv ${level}`, text: levelText(level) })];
-    if (c && c.feedback) parts.push(el('span', { text: c.feedback }));
+    // The model's reason for this level replaces the generic feedback line when present.
+    const why = c && (c.level_reason || c.feedback);
+    if (why) parts.push(el('span', { text: why }));
     if (c && c.follow_up_question) parts.push(el('span', {}, el('b', { text: '생각해 볼 질문 · ' }), c.follow_up_question));
-    if (!c || (!c.feedback && !c.follow_up_question)) {
+    if (!c || (!why && !c.follow_up_question)) {
       parts.push(el('span', { text: level === 'deep' ? '수업 내용을 새로운 상황으로 확장하는 깊은 질문이에요.'
         : '좋은 출발이에요. 한 마디 더 키워 볼까요?' }));
     }
@@ -711,8 +713,18 @@
       return;
     }
     coachMsg(...parts);
-    renderQuestionGuide(TEMPLATES[level], draft);
+    renderQuestionGuide(guideFor(level, c), draft);
     if (!draft) $('q-input').placeholder = '빈칸(___)을 내 생각으로 채워 다시 보내세요';
+  }
+
+  // Frames written from the student's own question come first; the fixed templates are the fallback.
+  function guideFor(level, c) {
+    const base = TEMPLATES[level];
+    if (!base) return base;
+    const frames = (c && Array.isArray(c.question_frames) ? c.question_frames : [])
+      .filter((f) => typeof f === 'string' && BLANK.test(f)).slice(0, 2);
+    if (!frames.length) return base;
+    return { next: base.next, items: frames.map((f, i) => [`내 질문에서 ${i + 1}`, f]) };
   }
 
   function renderQuestionGuide(guide, draft) {

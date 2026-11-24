@@ -26,7 +26,8 @@ SUITABILITY = "suitability"
 # Fields of a coaching decision replayed to later identical questions. Model
 # observability is per call and is not replayed.
 COACHING_FIELDS = ("mode", "question_level", "follow_up_question", "feedback", "evidence_refs",
-                   "student_must_write_revision", "validation", "goal_relevance", "level_basis", "level_rubric")
+                   "student_must_write_revision", "validation", "goal_relevance", "level_basis", "level_rubric",
+                   "level_reason", "question_frames", "evidence_mode")
 
 
 def now():

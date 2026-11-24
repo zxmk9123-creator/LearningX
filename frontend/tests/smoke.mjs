@@ -825,3 +825,10 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(quStudent.includes("좋은 출발이에요. 아래 질문을 참고해 내 질문으로 다듬으면 교수자에게 보낼 수 있어요."), 'starter note');
  console.log('OK: starter questions get coaching and continue as the same question');
 }
+{
+ // AI question frames from the student's own question come first; the level reason replaces the generic feedback.
+ assert.ok(quStudent.includes('function guideFor(level, c)') && quStudent.includes('renderQuestionGuide(guideFor(level, c), draft);'), 'AI frames are used when present');
+ assert.ok(quStudent.includes(".filter((f) => typeof f === 'string' && BLANK.test(f)).slice(0, 2)"), 'only frames with a blank, at most two');
+ assert.ok(quStudent.includes('const why = c && (c.level_reason || c.feedback);'), 'level reason shown');
+ console.log('OK: coaching shows the level reason and frames written from the student question');
+}
