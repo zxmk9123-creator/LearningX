@@ -135,6 +135,15 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(result["mode"], "DETERMINISTIC_FALLBACK")
         self.assertTrue(any("guardrail_repeats_follow_up" in e for e in result.get("model_errors", [])))
 
+    def test_an_accepted_retry_keeps_the_rejection_code(self):
+        bad = gateway(follow_up_question=self.HISTORY["previous_follow_up"]).generate.return_value
+        good = gateway().generate.return_value
+        g = Mock(); g.generate.side_effect = [bad, good]
+        result = run(g, history=self.HISTORY)
+        self.assertEqual(result["mode"], "MODEL_VALIDATED")
+        self.assertEqual(result["model_observability"]["attempts"], 2)
+        self.assertEqual(result["model_errors"], ["InvalidModelOutput: guardrail_repeats_follow_up"])
+
     def test_long_history_is_capped(self):
         g = gateway()
         run(g, history={"first_question": "가" * 1000, "turn": 2, "other": "x"})
