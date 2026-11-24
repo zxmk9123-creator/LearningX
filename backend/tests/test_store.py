@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from learningx.private_store import PrivateArtifactStore
+from learningx import private_store
+from learningx.private_store import PrivateArtifactStore, read_material_artifact
 
 
 class FakeBody(io.BytesIO):
@@ -28,6 +29,8 @@ class FakeS3:
         self.objects[(Bucket, Key)] = Body.read() if hasattr(Body, "read") else bytes(Body)
 
     def get_object(self, Bucket, Key):
+        self.gets = getattr(self, "gets", [])
+        self.gets.append(Key)
         return {"Body": FakeBody(self.objects[(Bucket, Key)])}
 
     def head_object(self, Bucket, Key):
@@ -56,6 +59,11 @@ class PrivateStoreTests(unittest.TestCase):
         })
         self.env.start()
         self.addCleanup(self.env.stop)
+        cache = tempfile.TemporaryDirectory()
+        self.addCleanup(cache.cleanup)
+        self.cache = patch.object(private_store, "CACHE_DIR", Path(cache.name))
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
         self.fake = FakeS3()
         self.store = PrivateArtifactStore(client=self.fake)
         self.course_id = "a" * 32
@@ -89,6 +97,49 @@ class PrivateStoreTests(unittest.TestCase):
             self.assertEqual(json.loads((parsed / "approved_evidence.json").read_text())["signature"], "second")
         self.assertTrue(all("private-lessons" in bucket for bucket, key in self.fake.objects))
         self.assertEqual(len([x for x in self.fake.objects if x[1].endswith("manifest.json")]), 1)
+
+    def test_repeat_workspaces_reuse_verified_artifacts(self):
+        """Only the small manifest is fetched again; lesson files come from the local cache."""
+        record = self._publish()
+        with self.store.workspace(record):
+            pass
+        first = list(self.fake.gets)
+        self.assertTrue(any(k.endswith("source.pdf") for k in first))
+        self.fake.gets.clear()
+        for _ in range(3):
+            with self.store.workspace(record) as parsed:
+                self.assertTrue((parsed / "document.json").is_file())
+                self.assertEqual((parsed.parent / "source.pdf").read_bytes(), b"%PDF-1.7 private teacher content")
+        self.assertTrue(self.fake.gets and all(k.endswith("manifest.json") for k in self.fake.gets), self.fake.gets)
+        self.fake.gets.clear()
+        with patch.object(private_store, "require_store", return_value=self.store):
+            self.assertEqual(read_material_artifact(record, "source.pdf", 1024), b"%PDF-1.7 private teacher content")
+        self.assertTrue(all(k.endswith("manifest.json") for k in self.fake.gets))
+
+    def test_a_changed_signature_is_fetched_once_then_cached(self):
+        record = self._publish()
+        with self.store.workspace(record) as parsed:
+            (parsed / "approved_evidence.json").write_text('{"signature":"first"}', encoding="utf-8")
+            self.store.publish_signed(record, parsed)
+        self.fake.gets.clear()
+        with self.store.workspace(record) as parsed:
+            self.assertEqual(json.loads((parsed / "approved_evidence.json").read_text())["signature"], "first")
+        self.assertEqual(len([k for k in self.fake.gets if "/signed/" in k]), 1)
+
+    def test_editing_a_workspace_never_changes_the_cache(self):
+        record = self._publish()
+        with self.store.workspace(record) as parsed:
+            (parsed / "document.json").write_text("changed", encoding="utf-8")
+        with self.store.workspace(record) as parsed:
+            self.assertIn("pages", json.loads((parsed / "document.json").read_text()))
+
+    def test_cache_stays_under_its_size_cap(self):
+        with patch.object(private_store, "CACHE_MAX_BYTES", 4000):
+            for n in range(10):
+                raw = bytes([n]) * 900
+                private_store._cache_store(private_store._sha(raw), raw)
+            total = sum(p.stat().st_size for p in private_store.CACHE_DIR.glob("*/*"))
+        self.assertLessEqual(total, 4000)
 
     def test_artifact_mutation_is_rejected_before_engine(self):
         record = self._publish()

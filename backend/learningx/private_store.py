@@ -27,6 +27,13 @@ MAX_TOTAL_BYTES = 180 * 1024 * 1024
 MAX_MANIFEST_BYTES = 200 * 1024
 MATERIAL_ID = re.compile(r"^[0-9a-f]{32}$")
 
+# Verified artifacts are immutable and named by their SHA-256, so a local copy can be
+# reused for every later request. Without it each coaching call, material list and
+# approval downloaded the whole lesson bundle (source PDF included) again, which used up
+# the storage provider's monthly network-transfer allowance.
+CACHE_DIR = Path(os.getenv("NIT_ARTIFACT_CACHE_DIR", os.path.join(tempfile.gettempdir(), "learningx-artifact-cache")))
+CACHE_MAX_BYTES = int(os.getenv("NIT_ARTIFACT_CACHE_BYTES", str(512 * 1024 * 1024)))
+
 
 def available():
     """An incomplete configuration never falls back to serverless local storage."""
@@ -58,6 +65,32 @@ def _safe_name(value):
 
 def _sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def _cache_path(digest):
+    return CACHE_DIR / digest[:2] / digest
+
+
+def _cache_store(digest, raw):
+    """Keep a verified artifact by digest; drop the least recently used beyond the cap."""
+    if CACHE_MAX_BYTES <= 0 or len(raw) > CACHE_MAX_BYTES // 4:
+        return
+    try:
+        target = _cache_path(digest)
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd, tmp = tempfile.mkstemp(dir=target.parent)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
+        os.replace(tmp, target)
+        entries = sorted((p.stat().st_mtime, p.stat().st_size, p) for p in CACHE_DIR.glob("*/*") if p.is_file())
+        total = sum(size for _, size, _ in entries)
+        for _, size, path in entries:
+            if total <= CACHE_MAX_BYTES:
+                break
+            path.unlink(missing_ok=True)
+            total -= size
+    except OSError:
+        pass  # The cache only saves transfer; a full or read-only disk just skips it.
 
 
 class PrivateArtifactStore:
@@ -94,6 +127,23 @@ class PrivateArtifactStore:
         body.close()
         if len(raw) > max_bytes:
             raise HTTPException(503, "Private artifact exceeds permitted size")
+        return raw
+
+    def _get_verified(self, key, size, digest):
+        """One immutable artifact, from the local cache when its digest is already there."""
+        cached = _cache_path(digest)
+        try:
+            if cached.stat().st_size == size:
+                raw = cached.read_bytes()
+                if len(raw) == size:
+                    os.utime(cached)
+                    return raw
+        except OSError:
+            pass
+        raw = self._get(key, size)
+        if len(raw) != size or _sha(raw) != digest:
+            raise HTTPException(503, "Private artifact integrity check failed")
+        _cache_store(digest, raw)
         return raw
 
     def _manifest(self, prefix):
@@ -194,9 +244,7 @@ class PrivateArtifactStore:
                 rel = _safe_name(item["path"])
                 if rel in ("parsed/live-preview.pdf", "parsed/live-text.pdf") or rel.startswith("parsed/live-pages/"):
                     continue
-                raw = self._get(item["key"], item["size"])
-                if len(raw) != item["size"] or _sha(raw) != item["sha256"]:
-                    raise HTTPException(503, "Private artifact integrity check failed")
+                raw = self._get_verified(item["key"], item["size"], item["sha256"])
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(raw)
@@ -259,10 +307,7 @@ def read_material_artifact(record, name, limit):
                 continue
             if item["size"] > limit:
                 raise HTTPException(413, "Artifact is too large")
-            raw = store._get(item["key"], item["size"])
-            if len(raw) != item["size"] or _sha(raw) != item["sha256"]:
-                raise HTTPException(503, "Private artifact integrity check failed")
-            return raw
+            return store._get_verified(item["key"], item["size"], item["sha256"])
     else:
         with material_workspace(record) as out:
             path = out.parent / name if name.startswith("source.") else out / name.removeprefix("parsed/")
