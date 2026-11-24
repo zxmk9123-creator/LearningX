@@ -330,6 +330,47 @@ def intake_reasons(text: str, recent_texts=(), *, anchored=False) -> list[str]:
     return rule_reasons(text, recent_texts, anchored=anchored)
 
 
+# Reasons that mark a seed of a question rather than harm: a definition or fact lookup,
+# a question whose target is unclear, or a statement such as "이해가 안 돼요". These still
+# get coaching (as a "starter"), but stay needs_revision for the board until rewritten.
+# Every other reason (privacy, attacks, abuse, disruption, confessions, naming students,
+# mockery, bare reactions) blocks coaching exactly as before.
+STARTER_REASONS = frozenset(("information_only", "not_a_question", "context_needed"))
+_SUBSTANCE = re.compile(r"[가-힣A-Za-z]{2,}")
+
+
+def _has_substance(text: str) -> bool:
+    """Words worth coaching on: at least two words of two letters or more."""
+    return len(_SUBSTANCE.findall(_visible_text(text))) >= 2
+
+
+def coaching_route(text: str, *, anchored=False) -> str:
+    """'coach' (a question), 'starter' (coach; board only after revision) or 'block' (no coaching).
+
+    Built on intake_reasons, the same rules the board gate uses, so the two never disagree
+    about what is harmful.
+    """
+    reasons = intake_reasons(text, anchored=anchored)
+    if not reasons:
+        return "coach"
+    if reasons == ["not_a_question"]:
+        # Not phrased as a question: look at the content too before coaching it.
+        content = rule_reasons(text, anchored=anchored)
+        if any(code not in STARTER_REASONS for code in content):
+            return "block"
+        if expression_reason(text) or not _has_substance(text):
+            return "block"
+        return "starter"
+    return "starter" if set(reasons) <= STARTER_REASONS else "block"
+
+
+def is_starter(state: dict | None, coaching: dict | None) -> bool:
+    """A draft held back from the board only for starter reasons, with coaching to show."""
+    return bool(state and state.get("status") == "needs_revision" and state.get("reason_codes")
+                and set(state["reason_codes"]) <= STARTER_REASONS
+                and coaching and coaching.get("mode") not in (None, "suitability_blocked"))
+
+
 def _missing_context(sentences) -> bool:
     questions = []
     for part in sentences:

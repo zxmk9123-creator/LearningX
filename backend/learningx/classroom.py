@@ -1466,11 +1466,15 @@ def _question_response(db, row):
     head, check = fit.current(db, row.id)
     state = fit.effective_check(row.latest_text, check, check.policy_version,
                                 anchored=fit.has_anchor(db, row.id)) if check else None
-    blocked = state and state["status"] == "needs_revision"
+    coaching = json.loads(row.latest_coaching_json)
+    # A starter (definition, unclear target, statement) is coached but stays off the board
+    # until the student rewrites it; anything harmful is still answered with the rejection only.
+    starter = fit.is_starter(state, coaching)
+    blocked = state and state["status"] == "needs_revision" and not starter
     waiting = state and state["status"] == "pending"
     return {"id": row.id, "level": None if blocked or waiting else row.level,
-            "coaching": None if blocked or waiting else _student_coaching(json.loads(row.latest_coaching_json)),
-            "message": fit.REJECTION_MESSAGE if blocked else None,
+            "coaching": None if blocked or waiting else _student_coaching(coaching),
+            "message": fit.REJECTION_MESSAGE if blocked else None, "starter": starter,
             "revision_id": head.revision_id if head else None, "suitability": state}
 
 
@@ -1494,7 +1498,7 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
     if data.anchor and (data.slide_page is None or page not in visible_pages(db.get(Material, s.material_id))):
         raise HTTPException(422, "Invalid question anchor")
     anchored = bool(data.anchor and data.anchor.quote.strip())
-    coaching = ({"mode": "suitability_blocked"} if fit.intake_reasons(data.question, anchored=anchored)
+    coaching = ({"mode": "suitability_blocked"} if fit.coaching_route(data.question, anchored=anchored) == "block"
                 else _coach(db, s, user, data.question))
     _lock_open(db, s)
     q = Question(course_id=s.course_id, material_id=s.material_id, student_id=user.id,
@@ -1548,8 +1552,8 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
         raise HTTPException(423, CHAT_LOCKED)
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
-    coaching = ({"mode": "suitability_blocked"} if fit.intake_reasons(data.text, anchored=fit.has_anchor(db, row.id))
-                else _coach(db, s, user, data.text))
+    route = fit.coaching_route(data.text, anchored=fit.has_anchor(db, row.id))
+    coaching = {"mode": "suitability_blocked"} if route == "block" else _coach(db, s, user, data.text)
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)  # same order as submits: session row, then question rows
     if row.submitted:

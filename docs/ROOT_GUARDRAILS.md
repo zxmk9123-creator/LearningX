@@ -25,7 +25,7 @@
 - **정규화:** NFKC, 연속 공백을 하나로, 끝의 물음표·마침표 제거.
 - **코칭 맥락 지문:** 교안 ID와 sha256, 서명 근거 집합 지문, 코스 정책, 교수자 승인 여부, 학습목표 프로필 버전.
 - **적합성 맥락 지문:** 교안 ID, 코스명, 쪽, 학생이 선택한 인용, 학습목표.
-- **코칭 루트 정책 버전** = `nit_coaching_v1 + coaching-prompt-v2 + level-rubric-v1 + guardrails-v1`
+- **코칭 루트 정책 버전** = `nit_coaching_v1 + coaching-prompt-v3 + level-rubric-v1 + guardrails-v1`
 - **적합성 루트 정책 버전** = `suitability-v1 + suitability-prompt-v1`
 - **규칙을 하나라도 바꾸면 해당 버전을 올린다.** 그러면 원장이 새로 시작되어, 옛 결정이 새 규칙 아래에서 재생되지 않는다.
 

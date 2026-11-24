@@ -635,7 +635,17 @@
       if (!st.current) st.current = { id: res.id, original: text };
       st.current.level = res.level;
       st.current.text = text;
-      if (res.revision_id) {
+      if (res.revision_id && res.starter && res.coaching) {
+        // A starter (a definition, an unclear target, "이해가 안 돼요"): coach it and keep the
+        // thread on this question, so the next send rewrites it instead of starting over.
+        // It reaches the question list only after it becomes a question the board accepts.
+        draftRead++;
+        batchSupported = true;
+        drafts.delete(st.current.id);
+        coachMsg(el('span', {class: 'muted', text: '좋은 출발이에요. 아래 질문을 참고해 내 질문으로 다듬으면 교수자에게 보낼 수 있어요.'}));
+        renderCoaching(res.level, res.coaching, null);
+        scheduleDraftPoll();
+      } else if (res.revision_id) {
         draftRead++;
         batchSupported = true;
         const draft = {...st.current, revision_id: res.revision_id, suitability: res.suitability, coaching: res.coaching};

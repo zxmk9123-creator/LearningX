@@ -161,7 +161,9 @@ class SuitabilityTests(unittest.TestCase):
         token = self.student()
         draft = self.ask(token, "강의 내용을 읽고 왔습니다?")
         self.assertEqual(draft["suitability"]["reason_codes"], ["not_a_question"])
-        self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
+        # A statement with substance is coached as a starter, but it is still not a question.
+        self.assertTrue(draft["starter"])
+        self.assertIsNone(draft["message"])
         self.assertEqual(self.gateway.calls, [])
         with SessionLocal() as db:
             _, check = fit.current(db, draft["id"])
@@ -187,8 +189,14 @@ class SuitabilityTests(unittest.TestCase):
             with self.subTest(text=text):
                 draft = self.ask(token, text)
                 self.assertIn(reason, draft["suitability"]["reason_codes"])
-                self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
-                self.assertIsNone(draft["coaching"])
+                if fit.coaching_route(text) == "starter":
+                    # Coached as a starter, still kept off the board until rewritten.
+                    self.assertTrue(draft["starter"])
+                    self.assertIsNone(draft["message"])
+                    self.assertIsNotNone(draft["coaching"])
+                else:
+                    self.assertEqual(draft["message"], fit.REJECTION_MESSAGE)
+                    self.assertIsNone(draft["coaching"])
                 self.assertEqual(self.batch(token, [draft]).status_code, 409)
         self.assertEqual(self.board_texts(), [])
         for text in ("고인 모독 표현은 토론 윤리에서 어떻게 다루나요?",
@@ -239,20 +247,27 @@ class SuitabilityTests(unittest.TestCase):
             "헐": "not_a_question",
         }
         for text, reason in cases.items():
+            starter = fit.coaching_route(text) == "starter"
             with self.subTest(text=text):
-                with patch.object(nit, "coach_question") as coach:
+                with patch.object(nit, "coach_question", return_value=COACHING) as coach:
                     res = self.req("POST", f"/v1/sessions/{self.session_id}/questions", token,
                                    json={"question": text})
                     self.assertEqual(res.status_code, 201, res.text)
-                    coach.assert_not_called()
+                    # Starters (definitions, unclear targets, statements) are coached; the rest are not.
+                    self.assertEqual(coach.called, starter)
                 body = res.json()
                 self.assertIn(reason, body["suitability"]["reason_codes"])
-                self.assertEqual(body["message"], fit.REJECTION_MESSAGE)
-                self.assertIsNone(body["level"])
-                self.assertIsNone(body["coaching"])
-                saved = self.mine(token)[body["id"]]
-                self.assertIsNone(saved["level_label"])
-                self.assertIsNone(saved["text"])
+                self.assertEqual(body["starter"], starter)
+                if starter:
+                    self.assertIsNone(body["message"])
+                    self.assertIsNotNone(body["coaching"])
+                else:
+                    self.assertEqual(body["message"], fit.REJECTION_MESSAGE)
+                    self.assertIsNone(body["level"])
+                    self.assertIsNone(body["coaching"])
+                    saved = self.mine(token)[body["id"]]
+                    self.assertIsNone(saved["level_label"])
+                    self.assertIsNone(saved["text"])
                 self.assertEqual(self.batch(token, [body]).status_code, 409)
                 blocked = self.req("POST", f"/v1/session-questions/{body['id']}/submit", token)
                 self.assertEqual(blocked.status_code, 409)

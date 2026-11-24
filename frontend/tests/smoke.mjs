@@ -819,3 +819,9 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(!quLive.includes("status.textContent = '교안 화면을 불러오지 못했습니다.'"), 'no dead-end error text');
  console.log('OK: live pages keep retrying, replace broken PDF workers and never stick on a load error');
 }
+{
+ // Starter questions (definitions, unclear targets, statements) are coached and the thread stays on them.
+ assert.ok(quStudent.includes('if (res.revision_id && res.starter && res.coaching) {'), 'starter responses show coaching');
+ assert.ok(quStudent.includes("좋은 출발이에요. 아래 질문을 참고해 내 질문으로 다듬으면 교수자에게 보낼 수 있어요."), 'starter note');
+ console.log('OK: starter questions get coaching and continue as the same question');
+}
