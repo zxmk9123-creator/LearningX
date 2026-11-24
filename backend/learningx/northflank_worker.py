@@ -36,17 +36,28 @@ def poll_once():
     return process_next_job(prepare_live_preview=True, renew_lease=True)
 
 
+IDLE_AFTER_EMPTY_POLLS = 30  # ~1 minute with nothing to do, then poll less often
+
+
+def idle_interval(base, empties):
+    """Back off once the queue has stayed empty so an idle class room is not polled every second."""
+    cap = max(base, min(int(os.getenv("NIT_WORKER_IDLE_POLL_SECONDS", "10")), 60))
+    return cap if empties >= IDLE_AFTER_EMPTY_POLLS else base
+
+
 def suitability_loop(stopped, interval=1):
     """Question suitability checks run beside ingestion so a long ingest never delays them."""
     from .suitability import poll_once as check_once
     print("learningx_suitability_worker_started", flush=True)
+    empties = 0
     while not stopped.is_set():
         try:
             state = check_once()
             # Never log question text or model output; only the outcome.
             if state != "EMPTY":
                 print("learningx_suitability " + state, flush=True)
-            wait = interval if state == "EMPTY" else 0
+            empties = empties + 1 if state == "EMPTY" else 0
+            wait = min(idle_interval(interval, empties), 3) if state == "EMPTY" else 0
         except Exception as exc:
             print("learningx_suitability_retry " + type(exc).__name__, file=sys.stderr, flush=True)
             wait = 10
@@ -63,6 +74,7 @@ def run(stop_event=None, poll_interval=None):
     interval = max(2, min(int(interval), 60))
 
     print("learningx_worker_started", flush=True)
+    empties = 0
     while not stopped.is_set():
         try:
             result = poll_once()
@@ -70,7 +82,8 @@ def run(stop_event=None, poll_interval=None):
             # Never log teacher documents, student questions, S3 URLs or tokens.
             if state not in ("EMPTY", "INFLIGHT"):
                 print("learningx_worker_job " + str(state), flush=True)
-            wait = interval if state in ("EMPTY", "INFLIGHT") else 2
+            empties = empties + 1 if state == "EMPTY" else 0
+            wait = idle_interval(interval, empties) if state in ("EMPTY", "INFLIGHT") else 2
         except Exception as exc:
             print("learningx_worker_retry " + type(exc).__name__, file=sys.stderr, flush=True)
             wait = max(interval, 10)
