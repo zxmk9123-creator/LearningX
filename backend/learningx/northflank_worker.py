@@ -10,6 +10,7 @@ import os
 import signal
 import sys
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import private_store
@@ -36,6 +37,24 @@ def poll_once():
     return process_next_job(prepare_live_preview=True, renew_lease=True)
 
 
+def quiet_now(now=None):
+    """True inside NIT_WORKER_QUIET_HOURS ("0-10" = 00:00 to 10:00, may wrap like "22-6").
+
+    While quiet the worker makes no DB query, so the free-tier Neon compute can scale to zero.
+    Clock is UTC+NIT_WORKER_TZ_OFFSET (default 9, KST). Unset or invalid means never quiet.
+    """
+    spec = os.getenv("NIT_WORKER_QUIET_HOURS", "").strip()
+    try:
+        start, end = (int(x) for x in spec.split("-"))
+        if not (0 <= start <= 24 and 0 <= end <= 24) or start == end:
+            return False
+        offset = int(os.getenv("NIT_WORKER_TZ_OFFSET", "9"))
+    except ValueError:
+        return False
+    hour = (now or datetime.now(timezone.utc)).astimezone(timezone(timedelta(hours=offset))).hour
+    return start <= hour < end if start < end else hour >= start or hour < end
+
+
 IDLE_AFTER_EMPTY_POLLS = 30  # ~1 minute with nothing to do, then poll less often
 
 
@@ -51,6 +70,9 @@ def suitability_loop(stopped, interval=1):
     print("learningx_suitability_worker_started", flush=True)
     empties = 0
     while not stopped.is_set():
+        if quiet_now():
+            stopped.wait(60)
+            continue
         try:
             state = check_once()
             # Never log question text or model output; only the outcome.
@@ -76,6 +98,9 @@ def run(stop_event=None, poll_interval=None):
     print("learningx_worker_started", flush=True)
     empties = 0
     while not stopped.is_set():
+        if quiet_now():
+            stopped.wait(60)
+            continue
         try:
             result = poll_once()
             state = result.get("result", "UNKNOWN")
