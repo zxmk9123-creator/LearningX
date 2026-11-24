@@ -326,11 +326,31 @@ def _student_coaching(coaching: dict) -> dict:
         "level": level,
         "follow_up_question": coaching.get("follow_up_question"),
         "feedback": coaching.get("feedback"),
+        # Why the level, and fill-in frames for the next question: only from a validated model
+        # decision (an unassessed question has no level to explain).
+        "level_reason": coaching.get("level_reason") if level != UNASSESSED else None,
+        "question_frames": [f for f in coaching.get("question_frames") or [] if isinstance(f, str)][:2]
+                           if level != UNASSESSED else [],
         "evidence_refs": [{"page": r.get("page")} for r in coaching.get("evidence_refs", []) if isinstance(r, dict)],
     }
 
 
-def _coach(db, s: ClassSession, user: User, text: str) -> dict:
+def _coaching_history(db, row: SessionQuestion) -> dict:
+    """Earlier turns of the question being revised, from the server's own records only."""
+    try:
+        before = json.loads(row.latest_coaching_json or "{}")
+    except ValueError:
+        before = {}
+    turns = db.query(Revision).filter(Revision.question_id == row.question_id).count()
+    history = {"first_question": _original_text(db, row), "previous_question": row.latest_text,
+               "turn": turns + 2}
+    if isinstance(before, dict) and before.get("mode") == "MODEL_VALIDATED":
+        history["previous_follow_up"] = before.get("follow_up_question")
+        history["previous_level"] = before.get("question_level")
+    return {k: v for k, v in history.items() if v}
+
+
+def _coach(db, s: ClassSession, user: User, text: str, history: dict | None = None) -> dict:
     m = db.get(Material, s.material_id)
     c = db.get(Course, s.course_id)
     if not m or not c:
@@ -344,11 +364,17 @@ def _coach(db, s: ClassSession, user: User, text: str) -> dict:
         context = {"material": m.id, "material_sha256": m.sha256, "evidence": nit.evidence_fingerprint(out),
                    "course_policy": c.policy, "teacher_approved": bool(c.teacher_approved),
                    "profile": f"{profile.id}:{profile.version}" if profile else None}
+        if history:
+            # The same revision after a different conversation is a different decision.
+            context["conversation"] = hashlib.sha256(json.dumps(history, ensure_ascii=False, sort_keys=True)
+                                                     .encode()).hexdigest()[:32]
         key = judgments.key_for(judgments.COACHING, policy, context, text)
         decided = judgments.recall(db, key)
         if decided is None:
             owner = db.get(User, c.created_by)
             options = {"objective": objective} if objective else {}
+            if history:
+                options["history"] = history
             # Guest classes and deployments without a configured model use the deterministic coaching
             # (recorded as unassessed) instead of failing the student's question with a 503.
             use_model = not (owner and is_guest(owner)) and nit.model_gateway() is not None
@@ -1553,7 +1579,8 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
     route = fit.coaching_route(data.text, anchored=fit.has_anchor(db, row.id))
-    coaching = {"mode": "suitability_blocked"} if route == "block" else _coach(db, s, user, data.text)
+    coaching = ({"mode": "suitability_blocked"} if route == "block"
+                else _coach(db, s, user, data.text, history=_coaching_history(db, row)))
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)  # same order as submits: session row, then question rows
     if row.submitted:
