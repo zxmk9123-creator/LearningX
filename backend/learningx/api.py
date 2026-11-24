@@ -27,9 +27,12 @@ from .neon_identity import router as neon_identity_router
 app=FastAPI(title="LearningX NIT Backend",version="0.1.0",docs_url=None,redoc_url=None)
 # Frontend origins must be explicitly configured; no wildcard CORS with bearer tokens.
 origins=[x.strip() for x in os.getenv("NIT_CORS_ORIGINS","").split(",") if x.strip()]
+# Every method an API route uses must be listed, or the browser's preflight fails and the
+# request never reaches the route (tests check this against the route table).
+CORS_METHODS=["GET","POST","PUT","DELETE"]
 if origins:
     app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=False,
-        allow_methods=["GET","POST","PUT"],allow_headers=["Authorization","Content-Type"],
+        allow_methods=CORS_METHODS,allow_headers=["Authorization","Content-Type"],
         expose_headers=["Server-Timing"])
 
 @app.on_event("startup")
