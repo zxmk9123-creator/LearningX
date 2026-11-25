@@ -54,25 +54,42 @@ def run(g, question=QUESTION, history=None):
 
 
 class FrameTests(unittest.TestCase):
+    # QUESTION ("왜 효과가 있나요") is a mid question: frames must ask for a deep one.
+    DEEP = ["공포 소구를 ___ 기준으로 평가하면 어떤 한계가 있나요?",
+            "공포 소구와 ___ 중 어느 쪽이 ___ 제품에 더 효과적인가요?"]
+
     def test_valid_frames_are_kept(self):
-        frames = ["공포 소구에서 ___가 커지면 태도 변화는 어떻게 달라지나요?",
-                  "공포 소구와 ___ 소구를 ___ 기준으로 비교하면 무엇이 다른가요?"]
-        result = run(gateway(question_frames=frames))
+        result = run(gateway(question_frames=self.DEEP))
         self.assertEqual(result["mode"], "MODEL_VALIDATED")
-        self.assertEqual(result["question_frames"], frames)
+        self.assertEqual(result["question_frames"], self.DEEP)
 
     def test_bad_frames_are_dropped_not_fatal(self):
         frames = ["공포 소구는 왜 효과가 있나요?",                  # no blank, the student's own question
                   "정답은 ___ 때문입니다?",                        # answer leak
                   "___?",                                         # too short
                   "Why does ___ work for fear appeals?",           # not Korean
-                  "공포 소구에서 ___가 커지면 무엇이 달라지나요"]   # no question mark
+                  "공포 소구를 ___ 기준으로 평가하면 어떤 한계가 있나요",  # no question mark
+                  "공포 소구를 ___ 기준으로 평가해 보세요?"]        # a command with a question mark
         result = run(gateway(question_frames=frames))
         self.assertEqual(result["mode"], "MODEL_VALIDATED")
         self.assertNotIn("question_frames", result)
 
+    def test_frames_at_the_same_level_or_without_a_cue_are_dropped(self):
+        """Seen in the production pilot: a mid question got mid frames back."""
+        frames = ["___가 태도 변화를 일으키는 구체적인 과정은 무엇인가요?",   # mid (mechanism)
+                  "공포 소구에서 ___가 커지면 무엇이 달라지나요?",          # no level cue
+                  self.DEEP[0]]
+        result = run(gateway(question_frames=frames))
+        self.assertEqual(result["question_frames"], [self.DEEP[0]])
+
+    def test_a_shallow_question_gets_mid_frames(self):
+        frames = ["공포 소구가 ___에 영향을 주는 이유는 무엇인가요?", "공포 소구의 ___은 무엇인가요?"]
+        result = run(gateway(question_level="clarify", question_frames=frames), question="공포 소구란 무엇인가요?")
+        self.assertEqual(result["question_level"], "clarify")
+        self.assertEqual(result["question_frames"], [frames[0]])
+
     def test_at_most_two_frames_and_blank_normalised(self):
-        frames = [f"공포 소구의 ____ 조건 {i}에서는 무엇이 달라지나요?" for i in range(3)]
+        frames = [f"공포 소구를 ____ 기준 {i}로 평가하면 어떤가요?" for i in range(3)]
         result = run(gateway(question_frames=frames))
         self.assertEqual(len(result["question_frames"]), 2)
         self.assertTrue(all("___" in f and "____" not in f for f in result["question_frames"]))
@@ -86,7 +103,7 @@ class FrameTests(unittest.TestCase):
 
 
 class ReasonTests(unittest.TestCase):
-    def test_the_model_reason_is_used_when_it_describes_the_final_level(self):
+    def test_the_model_reason_is_used_when_it_names_the_final_level(self):
         result = run(gateway(level_reason="까닭을 묻고 있어서 중간 수준이에요."))
         self.assertEqual(result["question_level"], "analyze")
         self.assertEqual(result["level_reason"], "까닭을 묻고 있어서 중간 수준이에요.")
@@ -97,17 +114,25 @@ class ReasonTests(unittest.TestCase):
         self.assertTrue(result["level_basis"].startswith("rule:"))
         self.assertEqual(result["level_reason"], engine.RULE_REASONS[result["level_basis"].split(":", 1)[1]])
 
-    def test_bad_reasons_are_dropped(self):
-        for reason in ("왜일까요?", "짧음", "정답은 위협 때문입니다.", "가" * 90, 7):
+    def test_bad_reasons_are_replaced_by_the_rule_reason(self):
+        """Seen in the production pilot: third-person reasons, and reasons that never appeared."""
+        rule = engine.RULE_REASONS["reason"]
+        for reason in ("왜일까요?", "짧음", "정답은 위협 때문이에요.", "가" * 90, 7,
+                       "학생이 공포 소구가 태도 변화를 일으키는 메커니즘을 원인으로 분석하려고 합니다.",
+                       "원인을 묻는 질문이므로 중간 수준입니다.", "뜻을 묻는 질문이라 얕은 수준이에요.", None):
             with self.subTest(reason=reason):
-                result = run(gateway(level_reason=reason))
+                result = run(gateway(level_reason=reason) if reason is not None else gateway())
                 self.assertEqual(result["mode"], "MODEL_VALIDATED")
-                self.assertNotIn("level_reason", result)
+                self.assertEqual(result["level_reason"], rule)
 
-    def test_every_rule_cue_has_a_safe_reason(self):
-        from runtime.level_rules import resolve_level  # noqa: F401
-        for cue, text in engine.RULE_REASONS.items():
-            with self.subTest(cue=cue):
+    def test_a_question_without_a_cue_gets_the_level_sentence(self):
+        result = run(gateway(question_level="analyze"), question="공포 소구를 광고에 쓰는 장면을 떠올려 볼 수 있을까요?")
+        self.assertEqual(result["level_basis"], "model")
+        self.assertEqual(result["level_reason"], engine.TIER_REASONS["mid"])
+
+    def test_every_fixed_reason_passes_the_reason_rules(self):
+        for text in list(engine.RULE_REASONS.values()) + list(engine.TIER_REASONS.values()):
+            with self.subTest(text=text):
                 self.assertEqual(engine._clean_reason(text, "질문"), text)
 
 
@@ -234,6 +259,16 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(history["first_question"], "공포 소구란 무엇인가요?")
         self.assertEqual(history["previous_question"], "공포 소구가 태도 변화를 일으키는 이유는 무엇인가요?")
         self.assertEqual(history["turn"], 3)
+
+    def test_question_requests_report_database_time(self):
+        """Server-Timing tells database round trips apart from model time in production."""
+        with patch.object(nit, "coach_question", return_value=self.coaching()):
+            response = self.client.post(f"/v1/sessions/{self.sid}/questions", json={"question": "공포 소구란 무엇인가요?"},
+                                        headers=self.h(self.student))
+        timing = response.headers.get("Server-Timing", "")
+        self.assertRegex(timing, r'app;dur=[\d.]+')
+        self.assertRegex(timing, r'db;dur=[\d.]+;desc="\d+ queries"')
+        self.assertEqual(response.headers.get("Timing-Allow-Origin"), "*")
 
     def test_unassessed_coaching_hides_reason_and_frames(self):
         fallback = {"mode": "DETERMINISTIC_FALLBACK", "question_level": "analyze", "feedback": "f",
