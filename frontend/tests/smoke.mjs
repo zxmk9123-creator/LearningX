@@ -103,7 +103,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  const el = (tag, attrs = {}, ...kids) => ({tag, attrs, kids, append(...more){ kids.push(...more); }});
  const student = vm.createContext({el, levelText, LEVEL: ctx.window.QU.LEVEL, plant: stage => ({plant: stage}),
   batchSupported: false, RANK: {seed: 0, shallow: 1, mid: 2, deep: 3}, GROWTH: {}, TEMPLATES: {shallow: {items: [['비교', '___와 ___는 무엇이 다른가요?']]}}, st: {stage: 'mid'},
-  setStage: stage => stages.push(stage), coachMsg: (...parts) => messages.push(parts),
+  setStage: stage => stages.push(stage), coachMsg: (...parts) => messages.push(parts), hideThinking(){}, showThinking(){}, thinkingNode: null,
   $: id => ({append(card){ if (id === 'thread') guideCards.push(card); }}), scrollThread(){}, submitCurrent(){}, updateComposer(){}, useTemplate(){},
   document: {createTextNode: text => ({text})}});
  vm.runInContext(quStudent.slice(start, end) + '\nthis.renderCoaching = renderCoaching;', student);
@@ -652,7 +652,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  const replies = [];
  const ctx = vm.createContext({$, el, token: 'test', document: {}, clearTimeout(){}, setTimeout(){},
   st: {session: {id:'class', status:'OPEN', chat_open:true}, sentCount:0}, crypto: {randomUUID: () => 'batch-id'},
-  updateComposer(){}, coachMsg(...parts){ replies.push(parts); },
+  updateComposer(){}, coachMsg(...parts){ replies.push(parts); }, hideThinking(){}, showThinking(){}, thinkingNode: null,
   renderCoaching(...parts){ coaching.push(parts); },
   api: async (path, options) => {
    if (path.endsWith('/mine')) return {
@@ -716,7 +716,7 @@ console.log('OK: API origin confinement protects invite codes and tokens');
   $, drafts, token: 'test', st: {session: {id: 'class'}}, questionAnchor: null,
   liveView: null, pendingAsk: null, draftRead: 0, batchSupported: true, selected: new Map(),
   crypto: {randomUUID: () => String(requests.length)}, updateComposer(){}, paintDrafts(){},
-  meMsg(){}, scrollThread(){}, renderCoaching(){}, scheduleDraftPoll(){}, coachMsg(){},
+  meMsg(){}, scrollThread(){}, renderCoaching(){}, scheduleDraftPoll(){}, coachMsg(){}, hideThinking(){}, showThinking(){}, thinkingNode: null,
   showDraftOutcome(draft){ outcomes.push(draft); },
   el: () => ({remove(){}}),
   api: async (url, options) => {
@@ -831,4 +831,17 @@ console.log('OK: API origin confinement protects invite codes and tokens');
  assert.ok(quStudent.includes(".filter((f) => typeof f === 'string' && BLANK.test(f)).slice(0, 2)"), 'only frames with a blank, at most two');
  assert.ok(quStudent.includes('const why = c && (c.level_reason || c.feedback);'), 'level reason shown');
  console.log('OK: coaching shows the level reason and frames written from the student question');
+}
+{
+ // While the AI answers, an animated status replaces the old one-line "살펴보는 중" text.
+ const quApi = fs.readFileSync(path.join(root,'assets/qu-api.js'),'utf8');
+ const quCss = fs.readFileSync(path.join(root,'assets/qu.css'),'utf8');
+ const quObjective = fs.readFileSync(path.join(root,'assets/qu-objective.js'),'utf8');
+ assert.ok(quApi.includes('function thinking(') && quApi.includes("role: 'status', 'aria-live': 'polite'"), 'shared indicator with a polite status');
+ assert.ok(quStudent.includes('showThinking();') && !quStudent.includes("class: 'typing'"), 'student chat uses the indicator');
+ assert.ok(quStudent.includes('if (thinkingNode) thinkingNode.draftId = draft.id;') && quStudent.includes('hideThinking(draft.id);'), 'kept until the pending check shows its coaching');
+ assert.ok(quStudent.includes('setTimeout(() => hideThinking(), 90000)'), 'never spins forever');
+ assert.ok(quObjective.includes('previewing = QU.thinking('), 'faculty preview uses the indicator');
+ assert.ok(quCss.includes('@keyframes qu-dot') && quCss.includes('.thinking-dots i{opacity:.7}.thinking-bar{display:none}'), 'animation with a reduced-motion fallback');
+ console.log('OK: the chatbot shows an animated status while the AI answers');
 }

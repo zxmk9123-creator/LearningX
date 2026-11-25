@@ -179,5 +179,36 @@
     });
   }
 
-  window.QU = { apiBase, client, ApiError, keepTokenFresh, tokenExpiry, el, LEVEL, levelText, relTime, liveMark, liveTimingEnabled: traceEnabled };
+  // AI is answering: bouncing dots, a sweeping bar and a short line that moves through what
+  // the coach is doing. Screen readers hear the line once (polite status); motion stops for
+  // reduced-motion users (qu.css). stop() clears the timer; the caller removes the node.
+  const THINKING_STEPS = ['질문을 읽고 있어요', '교안에서 근거를 찾고 있어요', '질문의 수준을 살피고 있어요', '되물을 질문을 고르고 있어요'];
+  const THINKING_SLOW = '조금만 더 기다려 주세요. 꼼꼼히 살피는 중이에요';
+  function thinking({ steps = THINKING_STEPS, every = 1800, slowAfter = 12000, avatar = true } = {}) {
+    const label = el('span', { class: 'thinking-label', text: steps[0] });
+    const body = el('div', { class: 'bubble' },
+      el('span', { class: 'thinking-dots', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')),
+      label,
+      el('span', { class: 'thinking-bar', 'aria-hidden': 'true' }));
+    const node = avatar
+      ? el('div', { class: 'msg thinking', role: 'status', 'aria-live': 'polite' },
+        el('span', { class: 'av', 'aria-hidden': 'true', text: 'Q' }), body)
+      : el('div', { class: 'thinking solo', role: 'status', 'aria-live': 'polite' }, body);
+    const started = Date.now();
+    let step = 0;
+    const show = (text) => {
+      if (label.textContent === text) return;
+      label.classList.add('swap');
+      setTimeout(() => { label.textContent = text; label.classList.remove('swap'); }, 160);
+    };
+    const timer = setInterval(() => {
+      if (Date.now() - started >= slowAfter) { show(THINKING_SLOW); return; }
+      step = Math.min(step + 1, steps.length - 1);
+      show(steps[step]);
+    }, every);
+    node.stop = () => clearInterval(timer);
+    return node;
+  }
+
+  window.QU = { apiBase, client, ApiError, keepTokenFresh, tokenExpiry, el, LEVEL, levelText, relTime, liveMark, thinking, liveTimingEnabled: traceEnabled };
 })();
