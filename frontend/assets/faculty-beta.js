@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const api = 'https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run';
+  const api = 'https://p01--learningx-shared-api--rdbm26q7ps85.code.run';
   const form = document.querySelector('#faculty-beta');
   const invite = document.querySelector('#faculty-invite');
   const title = document.querySelector('#beta-title');
