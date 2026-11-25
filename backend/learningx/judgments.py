@@ -65,11 +65,25 @@ def recall(db, key: str):
 
 
 def record(db, key: str, kind: str, policy: str, decision: dict) -> dict:
-    """Store a decision; if an identical request stored one first, that one wins."""
+    """Store a decision; if an identical request stored one first, that one wins.
+
+    One round trip: INSERT ... ON CONFLICT DO NOTHING instead of a savepoint around an
+    insert. The earlier decision is read only when the key was already taken.
+    """
+    values = dict(key=key, kind=kind, policy_version=policy[:96], created_at=now(),
+                  decision_json=json.dumps(decision, ensure_ascii=False, sort_keys=True))
+    dialect = db.get_bind().dialect.name
+    if dialect in ("postgresql", "sqlite"):
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert
+        stored = db.execute(insert(RootJudgment).values(**values)
+                            .on_conflict_do_nothing(index_elements=["key"]).returning(RootJudgment.key)).first()
+        return decision if stored else (recall(db, key) or decision)
     try:
         with db.begin_nested():
-            db.add(RootJudgment(key=key, kind=kind, policy_version=policy[:96],
-                                decision_json=json.dumps(decision, ensure_ascii=False, sort_keys=True)))
+            db.add(RootJudgment(**values))
     except IntegrityError:
         return recall(db, key) or decision
     return decision

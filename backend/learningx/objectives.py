@@ -234,8 +234,10 @@ def latest_profile(db, material_id) -> ObjectiveProfile | None:
 
 
 def session_profile(db, session_id) -> ObjectiveProfile | None:
-    link = db.get(SessionObjectiveProfile, session_id)
-    return db.get(ObjectiveProfile, link.profile_id) if link else None
+    # One round trip for the class's link and the profile version it points to.
+    return (db.query(ObjectiveProfile).join(SessionObjectiveProfile,
+                                            SessionObjectiveProfile.profile_id == ObjectiveProfile.id)
+            .filter(SessionObjectiveProfile.session_id == session_id).first())
 
 
 def link_latest_profile(db, session_id, material_id) -> ObjectiveProfile | None:
