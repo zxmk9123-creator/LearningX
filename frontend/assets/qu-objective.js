@@ -105,6 +105,7 @@
     let preview = null;
     let previewQuestion = '';
     let busy = false;
+    let previewing = null;  // the "AI is answering" indicator while a preview runs
     let token = 0;
     const open = { optional: false, other: false, preview: false };
 
@@ -266,7 +267,8 @@
       return [
         el('div', { class: 'row' }, question,
           el('button', { class: 'btn sm', type: 'button', id: uid('preview-run'), text: '미리보기', onclick: () => runPreview(previewQuestion) })),
-        preview ? el('dl', { class: 'obj-preview' },
+        previewing,
+        !previewing && preview ? el('dl', { class: 'obj-preview' },
           el('dt', { text: '질문 진단' }), el('dd', { text: preview.diagnosis.level === 'unassessed'
             ? `판정 보류${preview.reason ? ` · ${UNASSESSED_REASON[preview.reason] || '판정하지 못함'}` : ''}` : `${preview.diagnosis.level_label} 질문` }),
           el('dt', { text: '목표 관련성' }), el('dd', { text: RELEVANCE[preview.goal_relevance] || '판정 보류' }),
@@ -326,7 +328,10 @@
       if (question.trim().length < 10) return say('샘플 질문을 10자 이상 입력해 주세요.');
       const missing = rules.missing(draft);
       if (missing.length) return say(`${missing.join(', ')}을(를) 먼저 적어 주세요.`);
-      busy = true; refresh(); say('미리보는 중…');
+      busy = true; preview = null;
+      previewing = QU.thinking({ avatar: false, steps: ['샘플 질문을 읽고 있어요', '승인한 교안에서 근거를 찾고 있어요',
+        '학습목표와 견주어 보고 있어요', '학생에게 되물을 질문을 고르고 있어요'] });
+      render(); refresh(); say('');
       try {
         preview = await api(`/v1/materials/${materialId}/objective-profiles/preview`, { method: 'POST', timeout: 60000,
           body: { profile: rules.payload(draft), question: question.trim() } });
@@ -334,7 +339,11 @@
       } catch (err) {
         preview = null;
         say(err.status === 409 ? '승인한 교안 내용이 없어 미리볼 수 없어요. 위의 교안 승인 수정에서 코칭에 쓸 내용을 승인해 주세요.' : err.message);
-      } finally { busy = false; render(); }
+      } finally {
+        if (previewing) previewing.stop();
+        previewing = null;
+        busy = false; render();
+      }
     }
 
     async function save() {

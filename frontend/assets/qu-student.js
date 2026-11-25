@@ -153,9 +153,30 @@
     requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
   }
 
+  // One "AI is answering" indicator at a time; it stays at the end of the thread.
+  let thinkingNode = null;
+  let thinkingGuard = null;
+  function showThinking() {
+    hideThinking();
+    thinkingNode = QU.thinking();
+    $('thread').append(thinkingNode);
+    scrollThread();
+    // Never leave it spinning: a check that never resolves on screen ends the wait after 90 s.
+    thinkingGuard = setTimeout(() => hideThinking(), 90000);
+  }
+  function hideThinking(draftId) {
+    if (!thinkingNode) return;
+    if (draftId && thinkingNode.draftId && thinkingNode.draftId !== draftId) return;
+    clearTimeout(thinkingGuard);
+    thinkingNode.stop();
+    thinkingNode.remove();
+    thinkingNode = null;
+  }
+
   function coachMsg(...children) {
     const node = el('div', { class: 'msg' }, el('span', { class: 'av', 'aria-hidden': 'true', text: 'Q' }), el('div', { class: 'bubble' }, ...children));
-    $('thread').append(node);
+    if (thinkingNode && thinkingNode.parentNode === $('thread')) $('thread').insertBefore(node, thinkingNode);
+    else $('thread').append(node);
     scrollThread();
     return node;
   }
@@ -290,6 +311,7 @@
   }
 
   function showDraftRetry(draft) {
+    hideThinking(draft.id);
     coachMsg(el('span', {text: '질문 적합성을 다시 확인해 주세요.'}),
       el('button', {class: 'btn sm', type: 'button', text: '다시 확인', onclick: event => {
         const latest = drafts.get(draft.id);
@@ -301,6 +323,7 @@
   }
 
   function showDraftOutcome(draft) {
+    if (draft.suitability?.status !== 'pending') hideThinking(draft.id);
     if (draft.suitability?.status === 'needs_revision') {
       coachMsg(el('span', {class: 'question-rejection'},
         el('span', {class: 'question-rejection-icon', 'aria-hidden': 'true', text: '!'}),
@@ -618,8 +641,7 @@
     st.sending = true; updateComposer(); paintDrafts();
     meMsg(text);
     $('q-input').value = ''; $('q-input').style.height = '';
-    const typing = el('p', { class: 'typing', text: '질문을 살펴보는 중…' });
-    $('thread').append(typing); scrollThread();
+    showThinking();
     try {
       const body = {question: text, slide_page: questionAnchor?.page ?? liveView?.page(), anchor: questionAnchor?.anchor};
       if (!st.current && (!pendingAsk || pendingAsk.content !== JSON.stringify(body))) {
@@ -629,8 +651,7 @@
         ? await api(`/v1/session-questions/${st.current.id}/revisions`, { method: 'POST', body: { text }, timeout: 90000 })
         : await api(`/v1/sessions/${st.session.id}/questions`, { method: 'POST',
           body: {...body, request_id: pendingAsk.requestId}, timeout: 90000 });
-      typing.remove();
-      if (token !== access) return;
+      if (token !== access) { hideThinking(); return; }
       pendingAsk = null;
       if (!st.current) st.current = { id: res.id, original: text };
       st.current.level = res.level;
@@ -642,6 +663,7 @@
         draftRead++;
         batchSupported = true;
         drafts.delete(st.current.id);
+        hideThinking();
         coachMsg(el('span', {class: 'muted', text: '좋은 출발이에요. 아래 질문을 참고해 내 질문으로 다듬으면 교수자에게 보낼 수 있어요.'}));
         renderCoaching(res.level, res.coaching, null);
         scheduleDraftPoll();
@@ -655,13 +677,20 @@
         if (draft.suitability?.status === 'needs_revision') drafts.delete(draft.id);
         else drafts.set(draft.id, draft);
         $('question-batch-status').textContent = '';
+        // The coaching appears once the suitability check finishes; keep the indicator until then.
+        if (draft.suitability?.status === 'pending' && draft.suitability.primary_reason !== 'check_unavailable') {
+          if (thinkingNode) thinkingNode.draftId = draft.id;
+        } else {
+          hideThinking();
+        }
         showDraftOutcome(draft);
         scheduleDraftPoll();
       } else {
+        hideThinking();
         renderCoaching(res.level, res.coaching, null);
       }
     } catch (err) {
-      typing.remove();
+      hideThinking();
       if (token !== access) return;
       if (err.status === 423) { await pollStatus(); }
       coachMsg(el('span', { text: err.status === 423 ? '지금은 질문을 받지 않는 중이에요. 교수자가 다시 열면 이어서 보낼 수 있어요.'
