@@ -57,13 +57,36 @@ def actor(request:Request, credentials:HTTPAuthorizationCredentials=Depends(sche
     _restrict_classroom_actor(request,p,db,user)
     return user
 
+# Request-scoped facts already checked against the database in this request (db.info).
+VERIFIED_COURSE="learningx_verified_course"
+PARTICIPANT="learningx_participant"
+ANCHORS="learningx_has_anchor"  # question id -> has a quoted anchor (anchors are written only when asked)
+HEADS="learningx_heads"  # question id -> current QuestionHead (or None) read with the access check
+CHAT_HINT="learningx_chat_hint"  # chat switch as read when the request started; writes re-read it under the lock
+KEEP="learningx_keep"
+
+
+def keep(db, *objects):
+    """Hold objects for the rest of the request: the identity map only keeps weak references,
+    so an object nobody holds is read again by the next db.get for the same row."""
+    db.info.setdefault(KEEP, []).extend(o for o in objects if o is not None)
+
+
 def require_course(db:Session, course_id:str, user:User, required:str):
     # Membership role is bound to DB, never to client-provided token claims.
-    m=db.query(Member).filter_by(course_id=course_id,user_id=user.id).first()
+    verified=db.info.get(VERIFIED_COURSE)
+    if verified and verified[:3]==(course_id,user.id,required):
+        return verified[3]
+    # One round trip for the membership and the deletion marker.
+    found=db.query(Member,CourseDeletion.course_id).select_from(Member).outerjoin(
+        CourseDeletion,CourseDeletion.course_id==Member.course_id).filter(
+        Member.course_id==course_id,Member.user_id==user.id).first()
+    m,deleted=found if found else (None,None)
     if not m or (m.role!=required and user.role!="admin"):
         raise HTTPException(403,"Course access denied")
-    if db.get(CourseDeletion,course_id):
+    if deleted:
         raise HTTPException(404,"Course not found")
+    db.info[VERIFIED_COURSE]=(course_id,user.id,required,m)
     return m
 
 
@@ -99,16 +122,51 @@ def _restrict_classroom_actor(request, claims, db, user):
     if route == "/v1/auth/refresh":
         target = bound  # renewal keeps the token's own class; membership is still checked below
     if "row_id" in request.path_params:
-        row = db.get(SessionQuestion,request.path_params["row_id"])
+        from .classroom import QuestionAnchor
+        from .suitability import QuestionHead, has_quote
+        # One round trip: the question, its quoted anchor and its current draft version.
+        found_row = (db.query(SessionQuestion, QuestionAnchor, QuestionHead).select_from(SessionQuestion)
+                     .outerjoin(QuestionAnchor, QuestionAnchor.question_id == SessionQuestion.id)
+                     .outerjoin(QuestionHead, QuestionHead.session_question_id == SessionQuestion.id)
+                     .filter(SessionQuestion.id == request.path_params["row_id"]).first())
+        row, anchor, head = found_row if found_row else (None, None, None)
         if not row or row.student_id != user.id:
             raise HTTPException(404,"Question not found")
+        keep(db, row, anchor, head)
+        db.info.setdefault(ANCHORS, {})[row.id] = has_quote(anchor)
+        db.info.setdefault(HEADS, {})[row.id] = head
         target = row.session_id
     if target != bound:
         raise HTTPException(403,"Token belongs to a different session")
-    if not db.query(SessionParticipant).filter_by(session_id=bound,user_id=user.id).first():
+    from sqlalchemy.orm import aliased
+    from .classroom import SessionChatAccess
+    from .live_slides import LiveSlide
+    from .storage import Course
+    from .suitability import SessionPolicy
+    owner = aliased(User)
+    # One round trip: participation, the class, its chat switch, the course membership and
+    # deletion marker the route checks next (a participant row implies the class exists), and
+    # rows the question routes read later (policy, live page, course and its owner). Read
+    # without locks: every write re-reads what it depends on under the session lock.
+    found = (db.query(ClassSession, SessionChatAccess.open, Member, CourseDeletion.course_id,
+                      SessionPolicy, LiveSlide, Course, owner)
+             .select_from(ClassSession)
+             .join(SessionParticipant, SessionParticipant.session_id == ClassSession.id)
+             .outerjoin(SessionChatAccess, SessionChatAccess.session_id == ClassSession.id)
+             .outerjoin(Member, (Member.course_id == ClassSession.course_id) & (Member.user_id == user.id))
+             .outerjoin(CourseDeletion, CourseDeletion.course_id == ClassSession.course_id)
+             .outerjoin(SessionPolicy, SessionPolicy.session_id == ClassSession.id)
+             .outerjoin(LiveSlide, LiveSlide.session_id == ClassSession.id)
+             .outerjoin(Course, Course.id == ClassSession.course_id)
+             .outerjoin(owner, owner.id == Course.created_by)
+             .filter(ClassSession.id == bound, SessionParticipant.user_id == user.id).first())
+    if not found:
         raise HTTPException(403,"Not a participant of this session")
-    current = db.get(ClassSession,bound)
-    if not current:
-        raise HTTPException(404,"Session not found")
+    current, chat, member, deleted, *prefetched = found
+    keep(db, current, member, *prefetched)
+    db.info[PARTICIPANT] = (bound, user.id)
+    db.info[CHAT_HINT] = (bound, bool(chat))
+    if member is not None and not deleted:
+        db.info[VERIFIED_COURSE] = (current.course_id, user.id, member.role, member)
     if request.method == "POST" and current.status != "OPEN" and route != "/v1/auth/refresh":
         raise HTTPException(423,"The class is not taking questions right now")

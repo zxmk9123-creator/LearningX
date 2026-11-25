@@ -569,7 +569,7 @@ def has_anchor(db, row_id):
     """Anchors are written only when a question is first asked, so one answer per request
     is enough (a missing anchor is not kept in the identity map and was read again each time)."""
     from .classroom import QuestionAnchor
-    known = db.info.setdefault("learningx_has_anchor", {})
+    known = db.info.setdefault("learningx_has_anchor", {})  # security.ANCHORS
     if row_id not in known:
         known[row_id] = has_quote(db.get(QuestionAnchor, row_id))
     return known[row_id]
@@ -594,18 +594,22 @@ def uses_model(db, session) -> bool:
     return nit.model_gateway() is not None
 
 
-def new_draft(db, row, session, text):
+def new_draft(db, row, session, text, *, new_row=False):
     """Record a new draft version and evaluate what can be decided now.
 
     Returns (head, check, queued). Rules decide immediately; without a model a
     clean draft is eligible. With a model a clean draft stays pending for the worker.
     """
     policy = fix_policy(db, session.id)
-    for old in db.query(SuitabilityCheck).filter(SuitabilityCheck.session_question_id == row.id,
-                                                 SuitabilityCheck.status == "pending"):
-        old.status = "superseded"
-        old.lease_until = None
-    head = db.get(QuestionHead, row.id)
+    if new_row:
+        head = None  # a question created in this request has no earlier checks or version
+    else:
+        for old in db.query(SuitabilityCheck).filter(SuitabilityCheck.session_question_id == row.id,
+                                                     SuitabilityCheck.status == "pending"):
+            old.status = "superseded"
+            old.lease_until = None
+        known = db.info.get("learningx_heads", {})  # security.HEADS, read with the access check
+        head = known[row.id] if row.id in known else db.get(QuestionHead, row.id)
     revision = uid()
     if head is None:
         head = QuestionHead(session_question_id=row.id, revision_id=revision)
@@ -614,8 +618,10 @@ def new_draft(db, row, session, text):
         head.revision_id = revision
         head.created_at = now()
     check = SuitabilityCheck(session_question_id=row.id, revision_id=revision, policy_version=policy)
-    db.add(check)
     queued = evaluate(db, row, session, check, text)
+    # Added after the rules decided it, so it is written once with its outcome
+    # (added first, a query inside evaluate flushed it and the outcome became a second UPDATE).
+    db.add(check)
     db.flush()
     return head, check, queued
 

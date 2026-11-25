@@ -37,7 +37,7 @@ from .live_timing import LiveTimingRoute, record_phase
 from .objectives import coaching_payload, link_latest_profile, session_profile
 from . import suitability as fit
 from . import judgments
-from .security import actor, decode_token, issue_token, require_course, scheme, session
+from .security import ANCHORS, CHAT_HINT, PARTICIPANT, actor, decode_token, issue_token, keep, require_course, scheme, session
 from .storage import Audit, Base, Course, CourseDeletion, Material, Member, Question, Revision, LiveReadSession, PublishSession, SessionLocal, User, publish_engine, uid
 
 router = APIRouter(prefix="/v1", route_class=LiveTimingRoute)
@@ -92,6 +92,18 @@ CHAT_LOCKED = "CHAT_LOCKED"
 def chat_open(db, session_id: str) -> bool:
     row = db.get(SessionChatAccess, session_id)
     return bool(row and row.open)
+
+
+LIVE_FLAGS = "learningx_live_flags"  # (session id, chat open, browse pages) read with a live poll's access check
+
+
+def chat_open_early(db, session_id: str) -> bool:
+    """The chat switch as read with the request's access check; only for skipping work early.
+    Every write re-reads it under the session lock (_lock_open)."""
+    hint = db.info.get(CHAT_HINT)
+    if hint and hint[0] == session_id:
+        return hint[1]
+    return chat_open(db, session_id)
 
 
 class SessionPageAccess(Base):
@@ -298,7 +310,8 @@ def _faculty_session(db, session_id, user) -> ClassSession:
 def _participant_session(db, session_id, user) -> ClassSession:
     s = _session_or_404(db, session_id)
     require_course(db, s.course_id, user, "student")
-    if not db.query(SessionParticipant).filter_by(session_id=s.id, user_id=user.id).first():
+    if db.info.get(PARTICIPANT) != (s.id, user.id) and \
+            not db.query(SessionParticipant).filter_by(session_id=s.id, user_id=user.id).first():
         raise HTTPException(403, "Not a participant of this session")
     return s
 
@@ -341,8 +354,12 @@ def _coaching_history(db, row: SessionQuestion) -> dict:
         before = json.loads(row.latest_coaching_json or "{}")
     except ValueError:
         before = {}
-    turns = db.query(Revision).filter(Revision.question_id == row.question_id).count()
-    history = {"first_question": _original_text(db, row), "previous_question": row.latest_text,
+    # One round trip: the first-asked text and how many rewrites came before.
+    first, turns = db.query(
+        Question.text,
+        select(func.count(Revision.id)).where(Revision.question_id == row.question_id).scalar_subquery(),
+    ).filter(Question.id == row.question_id).one_or_none() or (row.latest_text, 0)
+    history = {"first_question": first or row.latest_text, "previous_question": row.latest_text,
                "turn": turns + 2}
     if isinstance(before, dict) and before.get("mode") == "MODEL_VALIDATED":
         history["previous_follow_up"] = before.get("follow_up_question")
@@ -351,10 +368,14 @@ def _coaching_history(db, row: SessionQuestion) -> dict:
 
 
 def _coach(db, s: ClassSession, user: User, text: str, history: dict | None = None) -> dict:
-    m = db.get(Material, s.material_id)
-    c = db.get(Course, s.course_id)
-    if not m or not c:
+    # One round trip for the material, the course and its owner; kept for the rest of the
+    # request so the suitability check reads them from the identity map.
+    found = (db.query(Material, Course, User).select_from(Material).join(Course, Course.id == s.course_id)
+             .outerjoin(User, User.id == Course.created_by).filter(Material.id == s.material_id).first())
+    if not found:
         raise HTTPException(404, "Session material not found")
+    m, c, owner = found
+    keep(db, m, c, owner)
     profile = session_profile(db, s.id)
     objective = coaching_payload(profile) if profile else None
     with private_store.material_workspace(m) as out:
@@ -371,7 +392,6 @@ def _coach(db, s: ClassSession, user: User, text: str, history: dict | None = No
         key = judgments.key_for(judgments.COACHING, policy, context, text)
         decided = judgments.recall(db, key)
         if decided is None:
-            owner = db.get(User, c.created_by)
             options = {"objective": objective} if objective else {}
             if history:
                 options["history"] = history
@@ -669,24 +689,32 @@ def browse_page(session_id: str, page: int, db: Session = Depends(session),
 
 def _live_reader(db, credentials, session_id, *, include_page=False):
     claims = decode_token(credentials)
+    # One round trip for access and everything a poll shows besides the question index:
+    # the live slide, the chat switch and the pages open for browsing.
     query = (
-        select(User, ClassSession, Member.role, SessionParticipant.user_id)
+        select(User, ClassSession, Member.role, SessionParticipant.user_id,
+               SessionChatAccess.open, SessionPageAccess.pages, LiveSlide)
         .select_from(User)
         .outerjoin(ClassSession, ClassSession.id == session_id)
         .outerjoin(Member, (Member.course_id == ClassSession.course_id) & (Member.user_id == User.id))
         .outerjoin(SessionParticipant,
                    (SessionParticipant.session_id == ClassSession.id) & (SessionParticipant.user_id == User.id))
+        .outerjoin(SessionChatAccess, SessionChatAccess.session_id == ClassSession.id)
+        .outerjoin(SessionPageAccess, SessionPageAccess.session_id == ClassSession.id)
+        .outerjoin(LiveSlide, LiveSlide.session_id == ClassSession.id)
+        .options(undefer(LiveSlide.content))
         .where(User.id == claims["sub"])
     )
     if include_page:
-        query = (query.add_columns(LiveSlide, Material)
-                 .outerjoin(LiveSlide, LiveSlide.session_id == ClassSession.id)
-                 .outerjoin(Material, Material.id == ClassSession.material_id)
-                 .options(undefer(LiveSlide.content)))
+        query = (query.add_columns(Material)
+                 .outerjoin(Material, Material.id == ClassSession.material_id))
     row = db.execute(query).one_or_none()
     if row is None or not row[0].active:
         raise HTTPException(401, "Inactive or unknown user")
-    user, current, member_role, participant, *page_data = row
+    user, current, member_role, participant, chat, pages, slide, *material = row
+    keep(db, slide)  # _snapshot reads it from the identity map
+    db.info[LIVE_FLAGS] = (session_id, bool(chat), json.loads(pages) if pages else [])
+    page_data = (slide, *material) if include_page else ()
     scoped = claims.get("scope") is not None or user.email.endswith("@join.question-up.local")
     if scoped:
         if claims.get("scope") != "classroom" or not claims.get("session_id"):
@@ -862,8 +890,11 @@ def _snapshot(db, current, user, faculty, version, cursor=None):
                 LiveTransition.position > prior.position,
                 LiveTransition.position <= latest.position,
             ).order_by(LiveTransition.position).limit(32)]
-    return {"status": current.status, "chat_open": chat_open(db, session_id),
-            "browse_pages": browse_pages(db, session_id), "slide": snapshot, "index": index,
+    flags = db.info.get(LIVE_FLAGS)
+    chat, browse = (flags[1], flags[2]) if flags and flags[0] == session_id else \
+        (chat_open(db, session_id), browse_pages(db, session_id))
+    return {"status": current.status, "chat_open": chat,
+            "browse_pages": browse, "slide": snapshot, "index": index,
             "confusion": confusion, "transitions": transitions}
 
 
@@ -1475,10 +1506,15 @@ def acknowledge_confusion(session_id: str, data: ConfusionAcknowledgement,
 
 def _lock_open(db, s):
     """Share the session-row lock with state changes so a close and a write are ordered."""
-    db.refresh(s, with_for_update=True)
+    # One round trip: lock the session row (re-read) and read the chat switch fresh.
+    _, chat = db.execute(
+        select(ClassSession, SessionChatAccess.open)
+        .outerjoin(SessionChatAccess, SessionChatAccess.session_id == ClassSession.id)
+        .where(ClassSession.id == s.id).with_for_update(of=ClassSession)
+        .execution_options(populate_existing=True)).one()
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
-    if not chat_open(db, s.id):
+    if not chat:
         raise HTTPException(423, CHAT_LOCKED)
 
 
@@ -1510,7 +1546,7 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
     s = _participant_session(db, session_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
-    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+    if not chat_open_early(db, s.id):  # checked again under the row lock; this skips coaching early
         raise HTTPException(423, CHAT_LOCKED)
     if data.request_id:
         seen = db.get(fit.AskRequest, (s.id, user.id, data.request_id))
@@ -1543,7 +1579,9 @@ def session_ask(session_id: str, data: SessionAsk, background_tasks: BackgroundT
         db.add(QuestionSlide(question_id=row.id, page=page))
         if data.anchor:
             db.add(QuestionAnchor(question_id=row.id, location=data.anchor.model_dump_json(exclude_unset=True)))
-    head, check, queued = fit.new_draft(db, row, s, data.question)
+    if not data.anchor:
+        db.info.setdefault(ANCHORS, {})[row.id] = False  # no anchor was sent, so none exists
+    head, check, queued = fit.new_draft(db, row, s, data.question, new_row=True)
     _audit(db, user.id, s.course_id, "session_question_coached", s.material_id, detail=str(coaching.get("mode")))
     try:
         db.commit()
@@ -1574,7 +1612,7 @@ def session_revise(row_id: str, data: SessionRevise, background_tasks: Backgroun
     row, s = _own_row(db, row_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
-    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+    if not chat_open_early(db, s.id):  # checked again under the row lock; this skips coaching early
         raise HTTPException(423, CHAT_LOCKED)
     if row.submitted:
         raise HTTPException(409, "Question already submitted")
@@ -1653,7 +1691,7 @@ def session_submit(row_id: str, data: SingleSubmit | None = None,
     row, s = _own_row(db, row_id, user)
     if s.status != "OPEN":
         raise HTTPException(423, "The class is not taking questions right now")
-    if not chat_open(db, s.id):  # checked again under the row lock; this skips coaching early
+    if not chat_open_early(db, s.id):  # checked again under the row lock; this skips coaching early
         raise HTTPException(423, CHAT_LOCKED)
     _lock_open(db, s)
     db.refresh(row, with_for_update=True)
