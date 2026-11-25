@@ -1,7 +1,7 @@
 /* Question-up shared API client. Tokens live in memory only: no storage, no cookies. */
 (() => {
   'use strict';
-  const DEFAULT_API = 'https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run';
+  const DEFAULT_API = 'https://p01--learningx-shared-api--rdbm26q7ps85.code.run';
 
   function apiBase() {
     // Production accepts only the reviewed shared API. Local overrides require a

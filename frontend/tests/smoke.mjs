@@ -68,12 +68,12 @@ console.log(`OK: ${pages.length} linked HTML pages, app + Question-up contract h
 // Exercise the actual request client without network: a shared link must never
 // redirect the faculty invite code or bearer token to another API origin.
 for (const [hostname, query, expected] of [
- ['learning-x-one.vercel.app','https://outside.example','https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run'],
- ['learning-x-one.vercel.app','http://localhost:8000','https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run'],
+ ['learning-x-one.vercel.app','https://outside.example','https://p01--learningx-shared-api--rdbm26q7ps85.code.run'],
+ ['learning-x-one.vercel.app','http://localhost:8000','https://p01--learningx-shared-api--rdbm26q7ps85.code.run'],
  ['localhost','http://localhost:8000','http://localhost:8000'],
- ['localhost','http://localhost.evil.example:8000','https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run'],
- ['localhost','https://user:password@localhost:8000','https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run'],
- ['learning-x-one.vercel.app','https://outside.example/path','https://p01--learningx-shared-api--6j4w9s7dpfzw.code.run'],
+ ['localhost','http://localhost.evil.example:8000','https://p01--learningx-shared-api--rdbm26q7ps85.code.run'],
+ ['localhost','https://user:password@localhost:8000','https://p01--learningx-shared-api--rdbm26q7ps85.code.run'],
+ ['learning-x-one.vercel.app','https://outside.example/path','https://p01--learningx-shared-api--rdbm26q7ps85.code.run'],
 ]) {
  const calls=[];
  const ctx=vm.createContext({window:{},location:{hostname,search:'?api='+encodeURIComponent(query)},URL,URLSearchParams,AbortController,setTimeout,clearTimeout,
