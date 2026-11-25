@@ -566,8 +566,13 @@ def has_quote(anchor):
 
 
 def has_anchor(db, row_id):
+    """Anchors are written only when a question is first asked, so one answer per request
+    is enough (a missing anchor is not kept in the identity map and was read again each time)."""
     from .classroom import QuestionAnchor
-    return has_quote(db.get(QuestionAnchor, row_id))
+    known = db.info.setdefault("learningx_has_anchor", {})
+    if row_id not in known:
+        known[row_id] = has_quote(db.get(QuestionAnchor, row_id))
+    return known[row_id]
 
 
 def _recent_texts(db, row, session_id):
