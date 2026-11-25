@@ -1,0 +1,28 @@
+name: LearningX Demo Browser E2E
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/demo-browser-e2e.yml'
+  workflow_dispatch:
+
+jobs:
+  playwright:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python test syntax check
+        run: python -m py_compile frontend/tests/demo_e2e.py
+      - name: Install Playwright Chromium
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Frontend smoke and two-tab E2E
+        run: |
+          node frontend/tests/smoke.mjs
+          node frontend/tests/demo_rehearsal.mjs
+          python frontend/tests/demo_e2e.py

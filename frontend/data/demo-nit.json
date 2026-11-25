@@ -1,0 +1,173 @@
+{
+  "schema_version": "learningx_demo_nit_v1",
+  "source": {
+    "type": "fictional_example",
+    "title": "미디어와 사회 3주차 · 의제설정 이론",
+    "real_material": false
+  },
+  "pages": [
+    {
+      "page": 1,
+      "blocks": [
+        {
+          "id": "p1:concept",
+          "content_role": "lesson_content",
+          "quality": {
+            "status": "PASS"
+          },
+          "text": "의제설정 이론은 뉴스가 사람들이 어떤 사회 문제를 중요하게 인식하는지에 영향을 줄 수 있다는 설명이다.",
+          "keywords": [
+            "의제설정",
+            "의제",
+            "뉴스",
+            "언론",
+            "미디어",
+            "중요"
+          ]
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "blocks": [
+        {
+          "id": "p2:mechanism",
+          "content_role": "lesson_content",
+          "quality": {
+            "status": "PASS"
+          },
+          "text": "사회 문제의 반복적인 보도는 해당 이슈의 가시성을 높일 수 있으며, 보도 빈도와 수용자의 중요도 인식은 구분하여 살펴야 한다.",
+          "keywords": [
+            "보도",
+            "빈도",
+            "이슈",
+            "반복",
+            "뉴스",
+            "중요도",
+            "관심"
+          ]
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "blocks": [
+        {
+          "id": "p3:study",
+          "content_role": "lesson_content",
+          "quality": {
+            "status": "PASS"
+          },
+          "text": "의제설정 효과를 탐구하려면 매체 노출량과 수용자가 중요하다고 선택한 의제를 각각 관찰하고 비교해야 한다.",
+          "keywords": [
+            "의제설정",
+            "의제",
+            "노출",
+            "수용자",
+            "비교",
+            "효과",
+            "검증"
+          ]
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "blocks": [
+        {
+          "id": "p4:break",
+          "content_role": "break",
+          "quality": {
+            "status": "EXCLUDED"
+          },
+          "text": "잠시 휴식을 취하고 10분 뒤 수업을 재개합니다.",
+          "exclusion_reason": "휴식 안내는 학습 개념 근거가 아닙니다."
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "blocks": [
+        {
+          "id": "p5:preview",
+          "content_role": "next_class_preview",
+          "quality": {
+            "status": "EXCLUDED"
+          },
+          "text": "다음 시간에는 프레이밍 이론의 사례를 살펴봅니다.",
+          "exclusion_reason": "다음 차시 예고는 현재 학습 근거에서 제외됩니다."
+        }
+      ]
+    },
+    {
+      "page": 6,
+      "blocks": [
+        {
+          "id": "p6:question",
+          "content_role": "review_question",
+          "quality": {
+            "status": "EXCLUDED"
+          },
+          "text": "복습문제: 오늘 배운 핵심 내용을 세 가지로 요약해 보세요.",
+          "exclusion_reason": "복습문제는 학습 내용의 검증된 설명 근거가 아닙니다."
+        }
+      ]
+    },
+    {
+      "page": 7,
+      "blocks": [
+        {
+          "id": "p7:answer",
+          "content_role": "provided_answer",
+          "quality": {
+            "status": "EXCLUDED"
+          },
+          "text": "제공 답안: 반복 보도 빈도는 수용자의 중요도 판단에 항상 비례한다.",
+          "exclusion_reason": "제공 답안은 코칭용 근거가 아니며 정답 누설을 막아야 합니다."
+        }
+      ]
+    },
+    {
+      "page": 8,
+      "blocks": [
+        {
+          "id": "p8:note",
+          "content_role": "instructor_note",
+          "quality": {
+            "status": "EXCLUDED"
+          },
+          "text": "교수자 노트: 특정 사례에 관한 비공개 강의 진행 메모를 소개합니다.",
+          "exclusion_reason": "교수자 노트는 학생에게 공개할 승인 근거가 아닙니다."
+        }
+      ]
+    },
+    {
+      "page": 9,
+      "blocks": [
+        {
+          "id": "p9:chart",
+          "content_role": "visual_case",
+          "quality": {
+            "status": "NOT_VERIFIED"
+          },
+          "text": "미검증 도표: 가상의 응답률 91%가 모든 집단에서 동일하게 나타났습니다.",
+          "exclusion_reason": "미검증 시각자료는 품질 검증을 거치지 않았습니다."
+        }
+      ]
+    },
+    {
+      "page": 10,
+      "blocks": [
+        {
+          "id": "p10:audio",
+          "content_role": "audio",
+          "quality": {
+            "status": "NOT_ANALYZED"
+          },
+          "text": "내레이션 오디오: 녹음 설명과 발언 내용은 분석되지 않았습니다.",
+          "exclusion_reason": "오디오(NOT_ANALYZED)는 전사·검증되지 않았습니다."
+        }
+      ]
+    }
+  ]
+}
